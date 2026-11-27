@@ -2,24 +2,24 @@
 class Adf < Formula
   desc "Fleet of lightweight sandboxed Linux desktops for AI agents"
   homepage "https://github.com/CodeGeek04/agent-desktop-fleet"
-  version "0.1.0"
+  version "0.1.1"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.0/adf_0.1.0_darwin_arm64.tar.gz"
-      sha256 "a474b358cf346d9ebf4c224aacf66930ee8205371b97b4b56ea245889f136ee6"
+      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.1/adf_0.1.1_darwin_arm64.tar.gz"
+      sha256 "20a9ed63800bcb726e356493a1751fd1732a390c69a65d5c1385974a26b3724e"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.0/adf_0.1.0_linux_amd64.tar.gz"
-      sha256 "cb3d4077fa079756859925f1e1f4327a9a5203a8c13f7d3ce434ee13ec90e86e"
+      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.1/adf_0.1.1_linux_amd64.tar.gz"
+      sha256 "5c3dc3914c22870223d25069d8933f6c964cd97c645df64e1e8fc2abe2ac89e5"
     end
     on_arm do
-      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.0/adf_0.1.0_linux_arm64.tar.gz"
-      sha256 "83a1a80950a1303969e57123dc8244268fd2ef0fc405777eb442c16724e58624"
+      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.1/adf_0.1.1_linux_arm64.tar.gz"
+      sha256 "b23c27abaab6f7401b4b78bde6c4ff783565358c96ddf73a0a092d4ab03c571d"
     end
   end
 
@@ -32,6 +32,13 @@ class Adf < Formula
       adf runs each desktop in a smolvm microVM. If `adf doctor` reports that smolvm is
       missing, install it with:
         curl -sSL https://smolmachines.com/install.sh | bash
+
+      Give your coding agents the adf skill (Claude Code, Codex, Cursor, Gemini CLI,
+      GitHub Copilot, OpenCode and more):
+        adf skill install
+
+      Or, in Claude Code, install the plugin (skill and MCP tools together):
+        /plugin install adf --marketplace CodeGeek04/agent-desktop-fleet
     EOS
   end
 
