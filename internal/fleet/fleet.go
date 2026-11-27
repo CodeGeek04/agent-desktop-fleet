@@ -36,7 +36,15 @@ type Runtime interface {
 	Stop(ctx context.Context, name string) error
 	Delete(ctx context.Context, name string, cascade bool) error
 	Exec(ctx context.Context, name string, stdin io.Reader, argv ...string) ([]byte, error)
+	Stats(ctx context.Context, name string) (smolvm.Stats, error)
 }
+
+// Errors callers can test with errors.Is.
+var (
+	ErrInvalidName = errors.New("invalid desktop name")
+	ErrNotFound    = errors.New("no desktop named")
+	ErrExists      = errors.New("desktop already exists")
+)
 
 // Manager creates, lists, drives and removes desktops.
 type Manager struct {
@@ -63,10 +71,10 @@ var nameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`)
 // ValidateName checks a user-facing desktop name.
 func ValidateName(name string) error {
 	if !nameRE.MatchString(name) {
-		return fmt.Errorf("invalid desktop name %q: use 1 to 40 lowercase letters, digits or dashes, not starting or ending with a dash", name)
+		return fmt.Errorf("%w %q: use 1 to 40 lowercase letters, digits or dashes, not starting or ending with a dash", ErrInvalidName, name)
 	}
 	if name == "template" {
-		return errors.New(`"template" is a reserved name`)
+		return fmt.Errorf("%w %q: the name is reserved", ErrInvalidName, name)
 	}
 	return nil
 }
@@ -229,7 +237,7 @@ func (m *Manager) CreateDesktop(ctx context.Context, name string) (Desktop, erro
 		return Desktop{}, err
 	}
 	if existing != nil {
-		return Desktop{}, fmt.Errorf("desktop %q already exists", name)
+		return Desktop{}, fmt.Errorf("%w: %q", ErrExists, name)
 	}
 	if err := m.WarmTemplate(ctx); err != nil {
 		return Desktop{}, err
@@ -269,7 +277,7 @@ func (m *Manager) mustFind(ctx context.Context, name string) (*smolvm.Machine, e
 		return nil, err
 	}
 	if mc == nil {
-		return nil, fmt.Errorf("no desktop named %q", name)
+		return nil, fmt.Errorf("%w %q", ErrNotFound, name)
 	}
 	return mc, nil
 }
@@ -309,4 +317,24 @@ func (m *Manager) Computer(name string) *computer.Computer {
 		return m.RT.Exec(ctx, machine, stdin, argv...)
 	}
 	return computer.New(exec, computer.Screen{Display: image.Display, Width: image.Width, Height: image.Height})
+}
+
+// Stats returns a running desktop's CPU and memory use, as seen inside the guest.
+func (m *Manager) Stats(ctx context.Context, name string) (smolvm.Stats, error) {
+	if err := ValidateName(name); err != nil {
+		return smolvm.Stats{}, err
+	}
+	return m.RT.Stats(ctx, DesktopPrefix+name)
+}
+
+// TemplateState returns the template's runtime state, or "missing" before the first build.
+func (m *Manager) TemplateState(ctx context.Context) (string, error) {
+	t, err := m.find(ctx, TemplateName)
+	if err != nil {
+		return "", err
+	}
+	if t == nil {
+		return "missing", nil
+	}
+	return t.State, nil
 }

@@ -140,3 +140,19 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("args = %q", f.Calls[0].Args)
 	}
 }
+
+func TestStats(t *testing.T) {
+	f := &runner.Fake{Results: []runner.Result{{Stdout: []byte(`{"cpu_percent":12.5,"cpus":2,
+	  "memory":{"total_bytes":2086825984,"used_bytes":398458880,"available_bytes":1600000000},"name":"adf-a"}`)}}}
+	s, err := New("smolvm", f).Stats(ctx, "adf-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.CPUPercent != 12.5 || s.Memory.TotalBytes != 2086825984 || s.Memory.UsedBytes != 398458880 {
+		t.Fatalf("stats = %+v", s)
+	}
+	want := []string{"machine", "stats", "--error-format", "json", "--name", "adf-a", "--json"}
+	if !reflect.DeepEqual(f.Calls[0].Args, want) {
+		t.Fatalf("args = %q, want %q", f.Calls[0].Args, want)
+	}
+}
