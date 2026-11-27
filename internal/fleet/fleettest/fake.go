@@ -68,7 +68,7 @@ func (f *Fake) Create(_ context.Context, o smolvm.CreateOpts) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.record("create " + o.Name)
-	f.Machines[o.Name] = &smolvm.Machine{Name: o.Name, State: "stopped", Labels: o.Labels}
+	f.Machines[o.Name] = &smolvm.Machine{Name: o.Name, State: "stopped", Labels: o.Labels, Image: o.Image}
 	return nil
 }
 
