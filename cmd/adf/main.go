@@ -36,6 +36,7 @@ func (a *app) setup() error {
 	}
 	m := fleet.NewManager(smolvm.New(bin, runner.Exec{}), os.Stderr)
 	m.Host = host.Read
+	m.PauseUnsupported = pauseUnsupported()
 	if m.Limits, err = limitsFromEnv(fleet.DefaultLimits()); err != nil {
 		return err
 	}

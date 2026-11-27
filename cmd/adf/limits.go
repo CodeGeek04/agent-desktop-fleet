@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -79,4 +80,15 @@ func humanDuration(d time.Duration) string {
 		return fmt.Sprintf("%d min", int(d/time.Minute))
 	}
 	return d.String()
+}
+
+// pauseUnsupported explains why pausing does not work on this host, or returns "".
+// smolvm 1.37 on Linux cannot resume a paused branched desktop ("rewrite qcow2 backing:
+// permission denied"), and a paused desktop cannot be stopped or started either, so pausing
+// would strand it. ADF_PAUSE=1 forces pausing on once smolvm fixes this.
+func pauseUnsupported() string {
+	if os.Getenv("ADF_PAUSE") == "1" || runtime.GOOS != "linux" {
+		return ""
+	}
+	return "smolvm cannot resume paused desktops on Linux yet"
 }

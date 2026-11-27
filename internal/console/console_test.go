@@ -431,7 +431,7 @@ func TestStatusIncludesCapacityAndPauseWorks(t *testing.T) {
 	if out.Template != "running" || out.Capacity.Running != 1 {
 		t.Fatalf("status = %+v", out)
 	}
-	if res := do(t, ts, "POST", "/api/desktops/a/pause", "", true); res.StatusCode != http.StatusNoContent {
+	if res := do(t, ts, "POST", "/api/desktops/a/pause", "", true); res.StatusCode != http.StatusOK {
 		t.Fatalf("pause: status = %d", res.StatusCode)
 	}
 	if rt.Machines["adf-a"].State != "paused" {

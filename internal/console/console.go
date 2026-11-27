@@ -200,6 +200,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"capacity":           capacity,
 		"idle_pause_seconds": int(s.opts.IdlePause.Seconds()),
 		"adf_path":           s.opts.AdfPath,
+		"pause_unsupported":  s.fleet.PauseUnsupported,
 	})
 }
 
@@ -398,12 +399,16 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	start := time.Now()
-	err := s.fleet.Pause(r.Context(), name)
+	how, err := s.fleet.Sleep(r.Context(), name)
 	s.frames.forget(name)
-	s.record(name, "pause_desktop", "", start, err)
+	action := "pause_desktop"
+	if how == "stopped" {
+		action = "stop_desktop"
+	}
+	s.record(name, action, "", start, err)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]string{"result": how, "reason": s.fleet.PauseUnsupported})
 }

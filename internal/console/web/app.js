@@ -80,6 +80,9 @@ function humanSeconds(sec) {
   return sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`;
 }
 
+// Where pausing is not available (Linux for now), the same button stops the desktop.
+const sleepWord = () => (state.status && state.status.pause_unsupported ? "Stop" : "Pause");
+
 const describe = (e) => e.action.replaceAll("_", " ") + (e.detail ? " " + e.detail : "");
 const who = (e) => (e.source === "console" ? "You" : "Agent");
 const desktop = (name) => state.desktops.find((d) => d.name === name);
@@ -259,7 +262,7 @@ function updateTile(tile, d) {
   }
 
   const sleep = node.querySelector('[data-act="sleep"]');
-  const label = d.state === "running" ? "Pause" : d.state === "paused" ? "Resume" : "Start";
+  const label = d.state === "running" ? sleepWord() : d.state === "paused" ? "Resume" : "Start";
   sleep.textContent = state.busy.get(d.name) || label;
   sleep.disabled = state.busy.has(d.name);
   sleep.setAttribute("aria-label", `${label} ${d.name}`);
@@ -383,7 +386,7 @@ function renderFocus() {
 
   const running = d && d.state === "running" && !state.busy.has(d.name);
   const sleep = $("sleep-btn");
-  sleep.textContent = state.busy.get(state.focus) || (!d || d.state === "running" ? "Pause" : d.state === "paused" ? "Resume" : "Start");
+  sleep.textContent = state.busy.get(state.focus) || (!d || d.state === "running" ? sleepWord() : d.state === "paused" ? "Resume" : "Start");
   sleep.disabled = !d || d.state === "creating" || state.busy.has(state.focus);
   $("control-btn").disabled = !running;
   $("save-btn").disabled = !running;
@@ -464,11 +467,13 @@ async function sleepOrWake(name) {
   const d = desktop(name);
   if (!d || state.busy.has(name)) return;
   const pausing = d.state === "running";
-  state.busy.set(name, pausing ? "Pausing" : d.state === "paused" ? "Resuming" : "Starting");
+  state.busy.set(name, pausing ? (sleepWord() === "Stop" ? "Stopping" : "Pausing") : d.state === "paused" ? "Resuming" : "Starting");
   renderAll();
   try {
-    await api(`/api/desktops/${enc(name)}/${pausing ? "pause" : "start"}`, { method: "POST" });
-    toast(pausing ? `Paused ${name}. It uses no memory until the next action.` : `${name} is running`);
+    const res = await api(`/api/desktops/${enc(name)}/${pausing ? "pause" : "start"}`, { method: "POST" });
+    if (!pausing) toast(`${name} is running`);
+    else if ((await res.json()).result === "stopped") toast(`Stopped ${name}. Its files are kept; the next action starts it again.`);
+    else toast(`Paused ${name}. It uses no memory until the next action.`);
   } catch (err) {
     toast(err.message, "error");
   } finally {

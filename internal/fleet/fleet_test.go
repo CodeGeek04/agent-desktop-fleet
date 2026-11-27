@@ -500,3 +500,34 @@ func TestPauseIdle(t *testing.T) {
 		t.Fatalf("paused = %q, want only old", paused)
 	}
 }
+
+func TestSleepStopsWhenPauseIsUnsupported(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	m := testManager(rt)
+	m.PauseUnsupported = "not on this host"
+	how, err := m.Sleep(ctx, "a")
+	if err != nil || how != "stopped" {
+		t.Fatalf("how=%q err=%v, want stopped", how, err)
+	}
+	if got := rt.Calls(); len(got) != 1 || got[0] != "stop adf-a" {
+		t.Fatalf("calls = %q", got)
+	}
+	m.PauseUnsupported = ""
+	rt.Machines["adf-b"] = desktopMachine("b", "running", time.Now())
+	if how, err := m.Sleep(ctx, "b"); err != nil || how != "paused" {
+		t.Fatalf("supported: how=%q err=%v", how, err)
+	}
+}
+
+func TestPauseIdleDoesNothingWhenPauseIsUnsupported(t *testing.T) {
+	now := time.Now()
+	rt := fleettest.New()
+	rt.Machines["adf-old"] = desktopMachine("old", "running", now.Add(-time.Hour))
+	m := testManager(rt)
+	m.PauseUnsupported = "not on this host"
+	paused, err := m.PauseIdle(ctx, nil, 10*time.Minute, now)
+	if err != nil || len(paused) != 0 || len(rt.Calls()) != 0 {
+		t.Fatalf("paused=%q err=%v calls=%q", paused, err, rt.Calls())
+	}
+}

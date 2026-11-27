@@ -100,10 +100,15 @@ func (t *tools) deleteDesktop(ctx context.Context, _ *mcp.CallToolRequest, in na
 }
 
 func (t *tools) pauseDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
-	if err := t.fleet.Pause(ctx, in.Name); err != nil {
+	how, err := t.fleet.Sleep(ctx, in.Name)
+	if err != nil {
 		return nil, nil, err
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("paused desktop %q", in.Name)}}}, nil, nil
+	msg := fmt.Sprintf("paused desktop %q", in.Name)
+	if how == "stopped" {
+		msg = fmt.Sprintf("stopped desktop %q instead of pausing it (%s): its files are kept but open windows were closed; the next action starts it again", in.Name, t.fleet.PauseUnsupported)
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: msg}}}, nil, nil
 }
 
 func (t *tools) fleetStatus(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, fleet.Capacity, error) {
