@@ -76,6 +76,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/desktops", s.handleList)
 	api.HandleFunc("POST /api/desktops", s.handleCreate)
 	api.HandleFunc("DELETE /api/desktops/{name}", s.handleDelete)
+	api.HandleFunc("POST /api/desktops/{name}/start", s.handleStart)
+	api.HandleFunc("POST /api/desktops/{name}/stop", s.handleStop)
 	api.HandleFunc("GET /api/desktops/{name}/screen", s.handleScreen)
 	api.HandleFunc("POST /api/desktops/{name}/input", s.handleInput)
 	api.HandleFunc("GET /api/activity", s.handleActivity)
@@ -353,4 +355,29 @@ func (c *frameCache) forget(name string) {
 	c.mu.Lock()
 	delete(c.entries, name)
 	c.mu.Unlock()
+}
+
+func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	start := time.Now()
+	err := s.fleet.Start(r.Context(), name)
+	s.record(name, "start_desktop", "", start, err)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	start := time.Now()
+	err := s.fleet.Stop(r.Context(), name)
+	s.frames.forget(name)
+	s.record(name, "stop_desktop", "", start, err)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

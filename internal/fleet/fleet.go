@@ -292,6 +292,24 @@ func (m *Manager) Stop(ctx context.Context, name string) error {
 	return m.RT.Stop(ctx, mc.Name)
 }
 
+// Start boots a stopped desktop and brings its screen session back. Stopping a desktop
+// keeps its disk (files, browser profile) but not its memory, so the session restarts.
+func (m *Manager) Start(ctx context.Context, name string) error {
+	mc, err := m.mustFind(ctx, name)
+	if err != nil {
+		return err
+	}
+	if mc.State != "running" {
+		if err := m.RT.Start(ctx, mc.Name, false); err != nil {
+			return fmt.Errorf("start %q: %w", name, err)
+		}
+	}
+	if _, err := m.RT.Exec(ctx, mc.Name, nil, "desktop-start"); err != nil {
+		return fmt.Errorf("start desktop session in %q: %w", name, err)
+	}
+	return m.waitDesktopReady(ctx, mc.Name)
+}
+
 // Delete stops a desktop if it runs and removes it.
 func (m *Manager) Delete(ctx context.Context, name string) error {
 	mc, err := m.mustFind(ctx, name)
@@ -311,10 +329,19 @@ func (m *Manager) Exec(ctx context.Context, name string, argv ...string) ([]byte
 	return m.RT.Exec(ctx, DesktopPrefix+name, nil, argv...)
 }
 
-// Computer returns the computer-use actions for a desktop.
+// Computer returns the computer-use actions for a desktop. An action on a stopped desktop
+// (for example after the host rebooted) starts it and retries once, so agents are not stuck.
 func (m *Manager) Computer(name string) *computer.Computer {
 	machine := DesktopPrefix + name
 	exec := func(ctx context.Context, stdin io.Reader, argv ...string) ([]byte, error) {
+		out, err := m.RT.Exec(ctx, machine, stdin, argv...)
+		if err == nil || stdin != nil || !m.isStopped(ctx, machine, err) {
+			return out, err
+		}
+		m.logf("desktop %q was stopped; starting it", name)
+		if serr := m.Start(ctx, name); serr != nil {
+			return out, fmt.Errorf("%w (starting the stopped desktop also failed: %v)", err, serr)
+		}
 		return m.RT.Exec(ctx, machine, stdin, argv...)
 	}
 	return computer.New(exec, computer.Screen{Display: image.Display, Width: image.Width, Height: image.Height})
@@ -384,4 +411,14 @@ func parseMeminfo(data []byte) (GuestMemory, error) {
 		used = 0
 	}
 	return GuestMemory{TotalBytes: total * 1024, UsedBytes: used * 1024}, nil
+}
+
+// isStopped reports whether err came from smolvm and the machine exists but is not running.
+func (m *Manager) isStopped(ctx context.Context, machine string, err error) bool {
+	var se *smolvm.Error
+	if !errors.As(err, &se) || smolvm.IsNotFound(err) {
+		return false
+	}
+	mc, ferr := m.find(ctx, machine)
+	return ferr == nil && mc != nil && mc.State != "running"
 }

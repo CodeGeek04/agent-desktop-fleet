@@ -335,3 +335,45 @@ func TestMemoryRejectsGarbage(t *testing.T) {
 		t.Fatal("expected an error for output without MemTotal and MemAvailable")
 	}
 }
+
+func TestStartBringsStoppedDesktopBack(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "stopped", Labels: map[string]string{LabelRole: RoleDesktop}}
+	if err := testManager(rt).Start(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"start adf-a branchable=false",
+		"exec adf-a desktop-start",
+		"exec adf-a env DISPLAY=:1 xdotool search --onlyvisible --class firefox",
+	}
+	if got := rt.Calls(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("calls = %q\nwant %q", got, want)
+	}
+}
+
+func TestActionOnStoppedDesktopStartsItAndRetries(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "stopped", Labels: map[string]string{LabelRole: RoleDesktop}}
+	if err := testManager(rt).Computer("a").Key(ctx, "Return"); err != nil {
+		t.Fatalf("action on a stopped desktop should start it and succeed: %v", err)
+	}
+	got := rt.Calls()
+	if got[0] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" || got[1] != "start adf-a branchable=false" ||
+		got[len(got)-1] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" {
+		t.Fatalf("calls = %q", got)
+	}
+}
+
+func TestActionOnMissingDesktopIsNotRetried(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, _ []string) ([]byte, error) {
+		return nil, &smolvm.Error{Code: "NOT_FOUND", Message: "vm not found: adf-zzz"}
+	}
+	if err := testManager(rt).Computer("zzz").Key(ctx, "Return"); !smolvm.IsNotFound(err) {
+		t.Fatalf("err = %v, want not found", err)
+	}
+	if got := rt.Calls(); len(got) != 1 {
+		t.Fatalf("calls = %q, want a single attempt", got)
+	}
+}

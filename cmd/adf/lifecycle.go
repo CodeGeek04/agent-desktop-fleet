@@ -121,6 +121,25 @@ func lifecycleCommands(a *app) []*cobra.Command {
 		},
 	}
 
+	start := &cobra.Command{
+		Use:   "start NAME...",
+		Short: "Start stopped desktops",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.setup(); err != nil {
+				return err
+			}
+			for _, name := range args {
+				begin := time.Now()
+				if err := a.fleet.Start(cmd.Context(), name); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "started %s in %s\n", name, time.Since(begin).Round(10*time.Millisecond))
+			}
+			return nil
+		},
+	}
+
 	rm := &cobra.Command{
 		Use:   "rm NAME...",
 		Short: "Stop and delete desktops",
@@ -139,5 +158,5 @@ func lifecycleCommands(a *app) []*cobra.Command {
 		},
 	}
 
-	return []*cobra.Command{doctor, initCmd, create, ls, stop, rm}
+	return []*cobra.Command{doctor, initCmd, create, ls, start, stop, rm}
 }

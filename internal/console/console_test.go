@@ -396,3 +396,23 @@ func TestStatsUseGuestMemoryWithoutBalloon(t *testing.T) {
 		t.Fatalf("desktops = %+v, want used %d", out.Desktops, want)
 	}
 }
+
+func TestStopAndStartEndpoints(t *testing.T) {
+	rt := newRuntime()
+	_, ts := newServer(t, rt, Options{})
+	if res := do(t, ts, "POST", "/api/desktops/a/stop", "", true); res.StatusCode != http.StatusNoContent {
+		t.Fatalf("stop: status = %d", res.StatusCode)
+	}
+	if rt.Machines["adf-a"].State != "stopped" {
+		t.Fatal("desktop is still running")
+	}
+	if res := do(t, ts, "POST", "/api/desktops/a/start", "", true); res.StatusCode != http.StatusNoContent {
+		t.Fatalf("start: status = %d", res.StatusCode)
+	}
+	if rt.Machines["adf-a"].State != "running" {
+		t.Fatal("desktop did not start")
+	}
+	if res := do(t, ts, "POST", "/api/desktops/nope/start", "", true); res.StatusCode != http.StatusNotFound {
+		t.Fatalf("start unknown: status = %d", res.StatusCode)
+	}
+}

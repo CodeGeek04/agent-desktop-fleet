@@ -37,6 +37,20 @@ func (t *tools) addLifecycle(s *mcp.Server) {
 	}, recorded(t, "create_desktop", nameOf, nil, t.createDesktop))
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "stop_desktop",
+		Description: "Stop a desktop to free its memory and CPU while keeping its files. " +
+			"Any later action on it, or start_desktop, starts it again in about a second (open windows are not restored).",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true, OpenWorldHint: ptr(false)},
+	}, recorded(t, "stop_desktop", nameOf, nil, t.stopDesktop))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "start_desktop",
+		Description: "Start a stopped desktop and return a screenshot. Actions on a stopped desktop start it " +
+			"automatically, so this is only needed to warm one up ahead of time.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true, OpenWorldHint: ptr(false)},
+	}, recorded(t, "start_desktop", nameOf, nil, t.startDesktop))
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delete_desktop",
 		Description: "Stop and permanently delete a desktop and everything on it.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(true), IdempotentHint: true, OpenWorldHint: ptr(false)},
@@ -72,4 +86,20 @@ func (t *tools) deleteDesktop(ctx context.Context, _ *mcp.CallToolRequest, in na
 		return nil, nil, err
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("deleted desktop %q", in.Name)}}}, nil, nil
+}
+
+func (t *tools) stopDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+	if err := t.fleet.Stop(ctx, in.Name); err != nil {
+		return nil, nil, err
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("stopped desktop %q", in.Name)}}}, nil, nil
+}
+
+func (t *tools) startDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+	start := time.Now()
+	if err := t.fleet.Start(ctx, in.Name); err != nil {
+		return nil, nil, err
+	}
+	note := fmt.Sprintf("started desktop %q in %s", in.Name, time.Since(start).Round(10*time.Millisecond))
+	return t.withScreenshot(ctx, in.Name, nil, 0, note)
 }
