@@ -1,0 +1,11 @@
+{
+  "name": "adf",
+  "description": "Sandboxed Linux desktops for computer use: the adf MCP tools plus a skill for running many desktops in parallel within your computer's limits, handing control to a human, and cleaning up.",
+  "author": {
+    "name": "CodeGeek04"
+  },
+  "homepage": "https://github.com/CodeGeek04/agent-desktop-fleet",
+  "repository": "https://github.com/CodeGeek04/agent-desktop-fleet",
+  "license": "Apache-2.0",
+  "keywords": ["computer-use", "desktops", "browser", "microvm", "sandbox", "mcp"]
+}

@@ -41,16 +41,29 @@ func New(f *fleet.Manager, opts Options) *mcp.Server {
 		Title:   "Agent desktop fleet",
 		Version: opts.Version,
 	}, &mcp.ServerOptions{
-		Instructions: fmt.Sprintf("Sandboxed Linux desktops (%dx%d, Firefox) for computer use. "+
-			"Call create_desktop first, then use the action tools with the same desktop name. "+
-			"Coordinates are pixels from the top-left corner. Delete desktops you no longer need.",
-			image.Width, image.Height),
+		Instructions: instructions(),
 	})
 	t := &tools{fleet: f, opts: opts}
 	t.addLifecycle(server)
 	t.addActions(server)
 	t.addCommand(server)
 	return server
+}
+
+// instructions tells any MCP client how to use the fleet well: size the work to the
+// computer, run desktops in parallel, let a human take over, and clean up afterwards.
+func instructions() string {
+	return fmt.Sprintf("Sandboxed Linux desktops (%dx%d, Firefox) for computer use. Each desktop is an isolated "+
+		"microVM and create_desktop takes about a second. Then use the action tools with the same desktop name; "+
+		"coordinates are pixels from the top-left corner and each action returns a screenshot.\n"+
+		"Before creating several desktops, call fleet_status and stay within the room it reports. "+
+		"Give each independent part of a task its own desktop, and if you can run subagents in parallel, "+
+		"run one per desktop, each told its desktop name and to use only that desktop.\n"+
+		"For logins, captchas, payments or anything irreversible, ask the user to take over in the adf console "+
+		"(adf console, at http://127.0.0.1:7300 by default) and wait for them with screenshot wait_seconds.\n"+
+		"When the task is done, delete the desktops you created unless the user wants to keep them. "+
+		"Never delete desktops you did not create unless the user asks.",
+		image.Width, image.Height)
 }
 
 func ptr[T any](v T) *T { return &v }
