@@ -104,15 +104,18 @@ Price: $0.75/hour on demand. smolvm 1.37.7, same Wayland desktop (`images/waylan
 The 5.3 s display penalty on Linux matches smolvm's documented 5 second wait for a host
 `/dev/dri` render node; this host has no GPU. Workaround or upstream fix needed.
 
-## Blocker: branchable mode and host display do not work together
+## Blocker: branched machines get no host display frames
 
-On smolvm 1.37.7, both on macOS and Linux:
+On smolvm 1.37.7, verified on both macOS and Linux:
 
-- A machine started with `--branchable` and `SMOLVM_DISPLAY` opens its VNC port and completes the
-  RFB handshake, but never sends a frame. Captures hang. This applies to the source and to every branch.
-- The same machine started without `--branchable` captures normally.
-- Forcing a redraw (pointer move, `swaymsg reload`, output power cycle, restarting sway) does not help.
-- `machine checkpoint` of a branchable source failed with "invalid checkpoint stream".
+- A source started with `--branchable` and `SMOLVM_DISPLAY` captures normally over the host VNC port.
+- A machine created with `machine branch` (with its own `SMOLVM_VNC` port) opens the port and completes
+  the RFB handshake, but never sends a frame. Captures hang. Linux: 10 of 10 branches. macOS: 1 of 1.
+- Forcing a redraw in the branch (pointer move, `swaymsg reload`, output power cycle, restarting sway)
+  does not help, although the guest still has `/dev/dri/card0` and sway keeps running.
+- `machine checkpoint` of a branchable source with live branches failed with "invalid checkpoint stream".
+- An earlier note here said the branchable source also failed on macOS; a careful re-run showed that was
+  a timing fluke right after reinstalling the desktop. Only branches are affected.
 
 So today we can have cheap shared-memory copies (about 250 MB each) or host-side display and input,
 not both. A cold-booted desktop with host display costs roughly 1.2 to 1.5 GB instead.
