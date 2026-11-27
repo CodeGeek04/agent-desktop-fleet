@@ -1,0 +1,41 @@
+name: Release
+
+# Push a tag such as v0.1.0 to publish adf for Apple silicon Macs and Linux, then update the
+# Homebrew formula in Formula/adf.rb on main.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test ./...
+      - name: Build
+        run: scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/checksums.txt \
+            --repo "${GITHUB_REPOSITORY}" --title "adf ${GITHUB_REF_NAME}" --generate-notes --latest
+      - name: Update the Homebrew formula
+        run: |
+          git fetch origin main
+          git checkout main
+          scripts/render-formula.sh "${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/adf.rb
+          git commit -m "Update the Homebrew formula for ${GITHUB_REF_NAME}"
+          git push origin main

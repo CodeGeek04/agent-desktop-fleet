@@ -47,5 +47,5 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" adf-desktop-* \
             --repo "${GITHUB_REPOSITORY}" \
-            --title "Desktop image ${GITHUB_REF_NAME#image-}" \
+            --title "Desktop image ${GITHUB_REF_NAME#image-}" --latest=false \
             --notes "Prebuilt adf desktop image (Debian trixie, Xvfb, openbox, Firefox ESR, fonts) for linux/amd64 and linux/arm64. adf downloads it automatically."
