@@ -41,12 +41,14 @@ adf console         # watch them live in your browser
 adf rm a b
 ```
 
-## Use with Claude Code, Cursor and other MCP clients
+## Use with your coding agent
 
-**Claude Code plugin (recommended).** It adds the MCP server plus a skill that teaches Claude to
-split a task across desktops, stay within your computer's limits, run one subagent per desktop
-in parallel, hand you control for logins or payments, and delete its desktops afterwards. In
-Claude Code, run:
+adf works with any MCP client. Two pieces make an agent good at it: the **MCP tools** (`adf mcp`)
+and the **adf skill**, which teaches the agent to split a task across desktops, stay within your
+computer's limits, run desktops in parallel, hand you control for logins or payments, and delete
+its desktops afterwards.
+
+**Claude Code: install the plugin** (skill and MCP tools together):
 
 ```
 /plugin install adf --marketplace CodeGeek04/agent-desktop-fleet
@@ -57,18 +59,25 @@ Diego or Las Vegas: flights, hotels and things to do." The plugin starts `adf mc
 be on your PATH. If you added the server with `claude mcp add` before, remove that copy with
 `claude mcp remove adf`.
 
-**Just the MCP server.** Any client works, and the server's MCP instructions carry the same
-guidance in short form:
+**Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode, Amp, Goose, Windsurf, Cline, Kiro:**
 
 ```sh
-claude mcp add adf -- "$(command -v adf)" mcp
+adf skill install            # copies the skill into every agent it finds (--dry-run to preview)
 ```
 
-Cursor (`~/.cursor/mcp.json`) and other clients that take a JSON config:
+Or with the `skills` CLI: `npx skills add CodeGeek04/agent-desktop-fleet --skill adf-desktops`.
+Then add the MCP server (`adf skill install` prints the right command for each agent it finds):
 
-```json
-{ "mcpServers": { "adf": { "command": "/absolute/path/to/adf", "args": ["mcp"] } } }
-```
+| Agent | Command |
+|---|---|
+| Claude Code | `claude mcp add --scope user adf -- "$(command -v adf)" mcp` |
+| Codex | `codex mcp add adf -- "$(command -v adf)" mcp` |
+| Gemini CLI | `gemini mcp add -s user adf "$(command -v adf)" mcp` |
+| GitHub Copilot CLI | `copilot mcp add adf -- "$(command -v adf)" mcp` |
+| OpenCode | `opencode mcp add adf --global -- "$(command -v adf)" mcp` |
+| Cursor and other JSON configs | `{ "mcpServers": { "adf": { "command": "/absolute/path/to/adf", "args": ["mcp"] } } }` |
+
+Without the skill, agents still get short guidance from the server's own MCP instructions.
 
 `adf mcp` serves these tools: `create_desktop`, `list_desktops`, `delete_desktop`,
 `start_desktop`, `pause_desktop`, `fleet_status`, `screenshot`, `click`, `move_mouse`, `drag`,
@@ -159,7 +168,7 @@ Releases: push a `vX.Y.Z` tag to build archives, publish them and update `Formul
 
 - `cmd/adf`, `internal/`: the `adf` CLI, MCP server and web console
 - `install.sh`, `scripts/`, `Formula/`: installer, release build and Homebrew formula
-- `plugin/`, `.claude-plugin/`: the Claude Code plugin (MCP server and the `desktops` skill)
+- `skills/`: the adf skill (`adf skill install` embeds it); `plugin/`, `.claude-plugin/`: the Claude Code plugin
 - `docs/superpowers/plans/`: implementation plans
 - `reports/`, `research_notes/`, `spike/`: research and the runtime evaluation behind the design
 

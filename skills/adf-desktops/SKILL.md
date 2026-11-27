@@ -1,11 +1,13 @@
 ---
-name: desktops
-description: Use when a task needs a real browser or computer rather than a plain fetch or API, such as sites that need clicking, forms, logins or JavaScript (flight and hotel search, web apps), comparing many websites, testing a web or Linux desktop app, or using a GUI app; and whenever the user mentions adf, desktops or computer use. Covers sizing the work to this computer's limits, running one subagent per desktop in parallel, handing control to a human, and cleaning up.
+name: adf-desktops
+description: Use when a task needs a real browser or computer rather than a plain fetch or API, such as sites that need clicking, forms, logins or JavaScript (flight and hotel search, web apps), comparing many websites, testing a web or Linux desktop app, or using a GUI app; and whenever the user mentions adf, desktops or computer use. Covers sizing the work to this computer's limits, running desktops in parallel (one subagent each where the agent supports it), handing control to a human, and cleaning up. Needs the adf MCP server.
 ---
 
 # Running adf desktops
 
 adf gives you sandboxed Linux desktops (1280x800, Firefox, Debian) through its MCP tools. Each desktop is an isolated microVM that starts in about a second, so use as many as the task needs and the computer allows. The user watches them all live in the adf console.
+
+If the adf tools (`create_desktop`, `fleet_status` and the rest) are not available, tell the user to install adf from https://github.com/CodeGeek04/agent-desktop-fleet and add `adf mcp` as an MCP server.
 
 ## 1. Plan the split
 
@@ -22,7 +24,9 @@ Call `fleet_status` before creating several desktops. It reports how many more f
 
 ## 3. Run them in parallel
 
-Start one subagent per desktop, all in the same message, so they run at the same time. A fast model such as sonnet is usually enough for driving a desktop. Give each subagent a complete brief, since it sees nothing else:
+If you can start subagents (for example Claude Code's Agent tool), start one per desktop, all at once, so they run at the same time. A fast model (such as Sonnet in Claude Code) is usually enough for driving a desktop. If you cannot, drive the desktops yourself in turns: one action on each before the next round, rather than finishing one desktop before starting the next.
+
+Give each subagent a complete brief, since it sees nothing else:
 - its desktop name, and to create it with `create_desktop` if it does not exist
 - to use only that desktop, and never create, delete or touch other desktops
 - the goal and exactly which facts to bring back, in a few short lines
@@ -43,11 +47,11 @@ For a login, captcha, two-factor code, payment or anything irreversible, don't g
 
 ## 5. Report
 
-When the subagents are back, combine their findings into one answer, usually a table plus a recommendation. Say which pieces failed or were blocked and why, instead of filling gaps with guesses.
+When every desktop is done, combine the findings into one answer, usually a table plus a recommendation. Say which pieces failed or were blocked and why, instead of filling gaps with guesses.
 
 ## 6. Clean up
 
-When the task is done, delete every desktop you created with `delete_desktop`, including any whose subagent failed, then call `fleet_status` to confirm the room is back. Keep them only if the user asked to, or if a human still has to finish something on one (say which). Never delete desktops you did not create unless the user asks.
+When the task is done, delete every desktop you created with `delete_desktop`, including any whose work failed, then call `fleet_status` to confirm the room is back. Keep them only if the user asked to, or if a human still has to finish something on one (say which). Never delete desktops you did not create unless the user asks.
 
 ## When something fails
 

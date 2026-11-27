@@ -79,6 +79,11 @@ case ":$PATH:" in
 esac
 say "Next steps:"
 say "  ${adf} doctor     check this computer can run desktops"
-say "  ${adf} init       build the desktop template (once, about a minute)"
+say "  ${adf} init       get the desktop template ready (once, about a minute)"
 say "  ${adf} console    watch every desktop live"
-say "  claude mcp add adf -- ${install_dir}/adf mcp    give Claude Code the desktop tools"
+say ""
+say "Give your coding agents the adf skill:"
+say "  ${adf} skill install"
+"${install_dir}/adf" skill install --dry-run 2>/dev/null | sed 's/^would install for /  finds /' || true
+say "In Claude Code you can instead install the plugin (skill and MCP tools together):"
+say "  /plugin install adf --marketplace CodeGeek04/agent-desktop-fleet"
