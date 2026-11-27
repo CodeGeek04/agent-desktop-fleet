@@ -68,7 +68,7 @@ host for any Linux image with a compositor. The guest needs no agent software.
   must create the nodes and run udev at boot.
 - Firefox first run opens a privacy-notice tab; the image needs Firefox policies to suppress it.
 
-## Recommendation
+## Recommendation (first pass, Mac only; revisited after the Linux run below)
 
 Build on **smolvm**, behind our own small runtime interface so a second backend can be added later.
 
@@ -82,10 +82,52 @@ Build on **smolvm**, behind our own small runtime interface so a second backend 
 Costs we accept: about 20 percent more memory per idle copy, slower copy creation than
 microsandbox's warm restore, and an unauthenticated VNC port we must wrap.
 
+## Linux host results (AWS, same day)
+
+Host: AWS c8i.4xlarge in ap-south-1 (16 vCPU, 30 GiB, Ubuntu 24.04, kernel 7.0), launched with
+`--cpu-options NestedVirtualization=enabled` (needs a newer AWS CLI than 2.27; latest v1 via `uvx` works).
+Price: $0.75/hour on demand. smolvm 1.37.7, same Wayland desktop (`images/wayland-setup.sh`).
+
+| Metric | Result |
+|---|---|
+| Alpine boot, run, exit (cached) | 1.8 to 2.0 s (Mac: 1.3 s) |
+| Desktop provisioning | 60 s |
+| Machine start without display | 0.54 s |
+| Machine start with `SMOLVM_DISPLAY` | 5.8 s, every time |
+| Cold boot to Firefox window (with display) | 7.7 to 8.3 s |
+| Host-side keyboard input and capture | Works (Ctrl+L, type URL, Enter, capture) |
+| One capture with the `vncdo` CLI | 0.64 s (CLI startup dominates) |
+| Branch 10 live desktops from one source | 0.43 to 2.20 s each, 13.4 s total |
+| Host memory for 10 branches | +2.55 GB total (about 255 MB each) |
+| Per-branch PSS / private dirty | 218 to 262 MB / 188 to 223 MB |
+
+The 5.3 s display penalty on Linux matches smolvm's documented 5 second wait for a host
+`/dev/dri` render node; this host has no GPU. Workaround or upstream fix needed.
+
+## Blocker: branchable mode and host display do not work together
+
+On smolvm 1.37.7, both on macOS and Linux:
+
+- A machine started with `--branchable` and `SMOLVM_DISPLAY` opens its VNC port and completes the
+  RFB handshake, but never sends a frame. Captures hang. This applies to the source and to every branch.
+- The same machine started without `--branchable` captures normally.
+- Forcing a redraw (pointer move, `swaymsg reload`, output power cycle, restarting sway) does not help.
+- `machine checkpoint` of a branchable source failed with "invalid checkpoint stream".
+
+So today we can have cheap shared-memory copies (about 250 MB each) or host-side display and input,
+not both. A cold-booted desktop with host display costs roughly 1.2 to 1.5 GB instead.
+
+## Options for the capture path
+
+1. In-guest capture with cheap copies (works today, any runtime): a tiny guest agent takes
+   screenshots and injects input (Xvfb + xdotool, or grim + wtype on Wayland). Grid thumbnails reuse
+   those screenshots; a VNC server starts in the guest only when a human opens a machine.
+2. Host display without copies: guest-agnostic, but each desktop cold boots and costs about 5x the memory.
+3. Fix smolvm upstream so branchable machines keep their display, then move to host capture later.
+
 ## Next steps
 
-1. Bake the image: sway + udev + input nodes + Firefox policies, built as an OCI image in CI.
-2. Native host-side RFB client in our daemon (screenshot, click, type, scroll) and measure latency
-   without the 2 s `uvx vncdotool` startup.
-3. Fleet test: 10, 20, 30 branched desktops on this Mac; record memory, CPU and branch time.
-4. Repeat the core measurements on a Linux KVM host.
+1. Pick the capture path from the options above.
+2. Bake the image as an OCI image in CI (Firefox policies, session-restore off).
+3. Native capture and input client in our daemon; measure latency without CLI startup.
+4. CPU per idle desktop at fleet scale (the top sampling in `bench/fleet-linux.sh` needs a fix).
