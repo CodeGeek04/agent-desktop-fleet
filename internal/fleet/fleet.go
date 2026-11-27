@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/computer"
@@ -45,6 +46,8 @@ type Manager struct {
 	ReadyTimeout time.Duration // how long to wait for the template desktop
 	Poll         time.Duration // readiness poll interval
 	Settle       time.Duration // extra wait after the desktop first appears, so windows finish drawing
+
+	mu sync.Mutex // serializes template operations; tool calls may arrive concurrently
 }
 
 // NewManager returns a Manager with default settings.
@@ -106,6 +109,8 @@ func (m *Manager) ensureBranchSource(ctx context.Context, t *smolvm.Machine) err
 
 // EnsureTemplate creates and provisions the template if needed and leaves it running as a branch source.
 func (m *Manager) EnsureTemplate(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	t, err := m.find(ctx, TemplateName)
 	if err != nil {
 		return err
@@ -160,6 +165,8 @@ type Desktop struct {
 // WarmTemplate makes sure the template runs as a branch source with its desktop up,
 // so every branch starts with a ready desktop.
 func (m *Manager) WarmTemplate(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	t, err := m.find(ctx, TemplateName)
 	if err != nil {
 		return err

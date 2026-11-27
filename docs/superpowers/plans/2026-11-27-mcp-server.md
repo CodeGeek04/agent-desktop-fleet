@@ -59,6 +59,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -71,6 +72,8 @@ type Fake struct {
 	// ExecFunc decides each Exec result. Nil means success with empty output.
 	// It is called without the lock held, so it must be safe for concurrent use.
 	ExecFunc func(name, stdin string, argv []string) ([]byte, error)
+	// StartDelay makes Start take time, like a real boot, so tests can expose races.
+	StartDelay time.Duration
 }
 
 // New returns an empty Fake.
@@ -121,8 +124,12 @@ func (f *Fake) Create(_ context.Context, o smolvm.CreateOpts) error {
 // Start implements fleet.Runtime.
 func (f *Fake) Start(_ context.Context, name string, branchable bool) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.record(fmt.Sprintf("start %s branchable=%v", name, branchable))
+	delay := f.StartDelay
+	f.mu.Unlock()
+	time.Sleep(delay)
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	m, ok := f.Machines[name]
 	if !ok {
 		return fmt.Errorf("vm not found: %s", name)
@@ -448,6 +455,7 @@ func TestConcurrentCreatesStartTemplateOnce(t *testing.T) {
 	rt := fleettest.New()
 	rt.Machines[TemplateName] = &smolvm.Machine{Name: TemplateName, State: "stopped",
 		Labels: map[string]string{LabelRole: RoleTemplate}}
+	rt.StartDelay = 20 * time.Millisecond
 	m := testManager(rt)
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)

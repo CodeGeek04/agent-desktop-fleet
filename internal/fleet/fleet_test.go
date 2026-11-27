@@ -3,8 +3,10 @@ package fleet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -222,5 +224,38 @@ func TestComputerRunsInsideTheDesktop(t *testing.T) {
 	}
 	if got := rt.Calls(); got[0] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" {
 		t.Fatalf("call = %q", got[0])
+	}
+}
+
+func TestConcurrentCreatesStartTemplateOnce(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines[TemplateName] = &smolvm.Machine{Name: TemplateName, State: "stopped",
+		Labels: map[string]string{LabelRole: RoleTemplate}}
+	rt.StartDelay = 20 * time.Millisecond
+	m := testManager(rt)
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if _, err := m.CreateDesktop(ctx, fmt.Sprintf("d%d", i)); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	starts := 0
+	for _, c := range rt.Calls() {
+		if strings.HasPrefix(c, "start adf-template") {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Fatalf("template started %d times, want 1", starts)
 	}
 }
