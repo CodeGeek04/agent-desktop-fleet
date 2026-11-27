@@ -150,8 +150,13 @@ func lifecycleCommands(a *app) []*cobra.Command {
 				return err
 			}
 			for _, name := range args {
-				if err := a.fleet.Pause(cmd.Context(), name); err != nil {
+				how, err := a.fleet.Sleep(cmd.Context(), name)
+				if err != nil {
 					return err
+				}
+				if how == "stopped" {
+					fmt.Fprintf(cmd.OutOrStdout(), "stopped %s (pausing is not available here: %s)\n", name, a.fleet.PauseUnsupported)
+					continue
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "paused", name)
 			}
@@ -186,7 +191,9 @@ func lifecycleCommands(a *app) []*cobra.Command {
 			if c.MoreThatFit >= 0 {
 				fmt.Fprintf(out, "Room for about %d more desktops\n", c.MoreThatFit)
 			}
-			if idle, err := idleFromEnv(); err == nil && idle > 0 {
+			if a.fleet.PauseUnsupported != "" {
+				fmt.Fprintf(out, "Pausing is not available here (%s), so idle desktops keep running\n", a.fleet.PauseUnsupported)
+			} else if idle, err := idleFromEnv(); err == nil && idle > 0 {
 				fmt.Fprintf(out, "Idle desktops pause after %s (ADF_IDLE_PAUSE)\n", humanDuration(idle))
 			}
 			return nil

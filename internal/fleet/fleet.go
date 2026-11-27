@@ -76,6 +76,9 @@ type Manager struct {
 	Settle       time.Duration              // extra wait after the desktop first appears, so windows finish drawing
 	Limits       Limits                     // admission limits for new and waking desktops
 	Host         func() (host.Stats, error) // host probe; nil disables memory checks
+	// PauseUnsupported, when set, explains why desktops cannot be paused on this host. Sleep
+	// then stops desktops instead, and PauseIdle does nothing.
+	PauseUnsupported string
 
 	mu sync.Mutex // serializes template operations; tool calls may arrive concurrently
 }
@@ -364,6 +367,15 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	return m.waitDesktopReady(ctx, mc.Name)
 }
 
+// Sleep frees a running desktop's memory: it pauses the desktop where pausing works, and
+// stops it otherwise (files kept, open windows closed). It reports "paused" or "stopped".
+func (m *Manager) Sleep(ctx context.Context, name string) (string, error) {
+	if m.PauseUnsupported != "" {
+		return "stopped", m.Stop(ctx, name)
+	}
+	return "paused", m.Pause(ctx, name)
+}
+
 // Pause saves a running desktop's memory to disk and frees it. Any action resumes it.
 func (m *Manager) Pause(ctx context.Context, name string) error {
 	mc, err := m.mustFind(ctx, name)
@@ -586,6 +598,9 @@ func (m *Manager) Capacity(ctx context.Context) (Capacity, error) {
 // PauseIdle pauses running desktops whose latest action is older than idle. lastActive maps
 // desktop names to their latest action; desktops without one count from their creation.
 func (m *Manager) PauseIdle(ctx context.Context, lastActive map[string]time.Time, idle time.Duration, now time.Time) ([]string, error) {
+	if m.PauseUnsupported != "" {
+		return nil, nil
+	}
 	ms, err := m.RT.List(ctx)
 	if err != nil {
 		return nil, err

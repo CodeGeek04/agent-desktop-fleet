@@ -4,7 +4,7 @@ Open-source tool to launch, manage, stop and watch many lightweight sandboxed Li
 for AI agent computer use. Infra only: VM lifecycle, an MCP server, and a live console that
 shows every machine. No agent loop.
 
-Status: early development. macOS (Apple silicon) works; Linux KVM is next.
+Status: early development. Tested on macOS (Apple silicon) and Linux (KVM).
 
 ## Try it
 
@@ -63,7 +63,9 @@ Measured on an Apple M5 with 24 GB:
 | Paused desktop | none | none | about 450 MB |
 
 A desktop is created in 0.5 to 1 s, pauses in about 6 s and resumes in 2 to 3 s with its windows
-intact. Desktops with no activity for 10 minutes are paused automatically; the next action
+intact. On Linux (an AWS c8i.4xlarge with nested virtualization) desktops share even more memory,
+about 72 MB of host memory each, but smolvm 1.37 cannot resume a paused desktop there yet, so on
+Linux pausing stops the desktop instead (files kept, windows closed) and idle desktops keep running. Desktops with no activity for 10 minutes are paused automatically; the next action
 resumes them. A new or waking desktop is refused, with advice, when it would leave the computer
 short of memory.
 
@@ -73,6 +75,7 @@ short of memory.
 | `ADF_DESKTOP_MB` | 512 | memory budgeted per desktop |
 | `ADF_MAX_DESKTOPS` | none | hard cap on running desktops |
 | `ADF_IDLE_PAUSE` | 10m | pause desktops idle this long; `0` turns it off |
+| `ADF_PAUSE` | unset | set to `1` to pause on Linux once smolvm can resume there |
 
 ## Watch and take over: the console
 
