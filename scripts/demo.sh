@@ -54,6 +54,25 @@ task() {
   esac
 }
 
+# Check the Claude Code login once before starting anything. This also refreshes an expired
+# login token up front, so the four agents do not all try to refresh it at the same moment.
+echo "Checking the Claude Code login..."
+if ! claude -p "Reply with OK" --model haiku > "$work/login.txt" 2>&1; then
+  cat "$work/login.txt" >&2
+  echo "Claude Code could not run. Run 'claude', type /login, then try the demo again." >&2
+  exit 1
+fi
+
+# Desktops left over from an earlier run (for example with --keep) would get in the way.
+leftover=""
+for d in $desktops; do
+  "$adf" ls | awk 'NR > 1 {print $1}' | grep -qx "$d" && leftover="$leftover $d"
+done
+if [ -n "$leftover" ]; then
+  echo "Removing demo desktops left from an earlier run:$leftover"
+  "$adf" rm $leftover >/dev/null
+fi
+
 console_pid=""
 if curl -fs -o /dev/null --max-time 2 http://127.0.0.1:7300/ 2>/dev/null; then
   echo "A console is already running at http://127.0.0.1:7300/: watch the demo there."
@@ -100,6 +119,10 @@ print("(%d turns, %.0f s, $%.2f)" % (d.get("num_turns",0), d.get("duration_ms",0
   echo
   i=$((i + 1))
 done
+if grep -qs "Failed to authenticate" "$work"/agent-*.json; then
+  echo "The agents could not log in to Claude. Run 'claude', type /login, then run the demo again."
+  echo
+fi
 python3 -c 'import json,sys
 t=0
 for p in sys.argv[1:]:
