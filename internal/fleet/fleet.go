@@ -80,9 +80,21 @@ func ValidateName(name string) error {
 	return nil
 }
 
-func (m *Manager) logf(format string, args ...any) {
+type progressKey struct{}
+
+// WithProgress returns a context whose long-running fleet operations (building the template,
+// starting a desktop) report each step to fn as well as to the Manager's log.
+func WithProgress(ctx context.Context, fn func(msg string)) context.Context {
+	return context.WithValue(ctx, progressKey{}, fn)
+}
+
+func (m *Manager) logf(ctx context.Context, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
 	if m.Log != nil {
-		fmt.Fprintf(m.Log, format+"\n", args...)
+		fmt.Fprintln(m.Log, msg)
+	}
+	if fn, ok := ctx.Value(progressKey{}).(func(string)); ok && fn != nil {
+		fn(msg)
 	}
 }
 
@@ -109,7 +121,7 @@ func (m *Manager) ensureBranchSource(ctx context.Context, t *smolvm.Machine) err
 			return fmt.Errorf("stop template: %w", err)
 		}
 	}
-	m.logf("starting template (the first start downloads the base image)")
+	m.logf(ctx, "starting template (the first start downloads the base image)")
 	if err := m.RT.Start(ctx, TemplateName, true); err != nil {
 		return fmt.Errorf("start template: %w", err)
 	}
@@ -125,7 +137,7 @@ func (m *Manager) EnsureTemplate(ctx context.Context) error {
 		return err
 	}
 	if t == nil {
-		m.logf("creating template %s from %s", TemplateName, m.Image)
+		m.logf(ctx, "creating template %s from %s", TemplateName, m.Image)
 		err := m.RT.Create(ctx, smolvm.CreateOpts{
 			Name: TemplateName, Image: m.Image, CPUs: 2, MemoryMiB: 2048, OverlayGiB: 8, Net: true,
 			Labels: map[string]string{LabelRole: RoleTemplate},
@@ -142,7 +154,7 @@ func (m *Manager) EnsureTemplate(ctx context.Context) error {
 	if err == nil && strings.TrimSpace(string(out)) == image.Version {
 		return nil
 	}
-	m.logf("installing desktop packages (one time, about 1 to 2 minutes)")
+	m.logf(ctx, "installing desktop packages (one time, about 1 to 2 minutes)")
 	steps := []struct {
 		stdin string
 		argv  []string
@@ -300,10 +312,12 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 	if mc.State != "running" {
+		m.logf(ctx, "starting desktop %q", name)
 		if err := m.RT.Start(ctx, mc.Name, false); err != nil {
 			return fmt.Errorf("start %q: %w", name, err)
 		}
 	}
+	m.logf(ctx, "starting the screen session in %q", name)
 	if _, err := m.RT.Exec(ctx, mc.Name, nil, "desktop-start"); err != nil {
 		return fmt.Errorf("start desktop session in %q: %w", name, err)
 	}
@@ -338,7 +352,7 @@ func (m *Manager) Computer(name string) *computer.Computer {
 		if err == nil || stdin != nil || !m.isStopped(ctx, machine, err) {
 			return out, err
 		}
-		m.logf("desktop %q was stopped; starting it", name)
+		m.logf(ctx, "desktop %q was stopped; starting it", name)
 		if serr := m.Start(ctx, name); serr != nil {
 			return out, fmt.Errorf("%w (starting the stopped desktop also failed: %v)", err, serr)
 		}

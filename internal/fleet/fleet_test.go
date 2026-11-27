@@ -377,3 +377,24 @@ func TestActionOnMissingDesktopIsNotRetried(t *testing.T) {
 		t.Fatalf("calls = %q, want a single attempt", got)
 	}
 }
+
+func TestProgressReportsTemplateSteps(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		if argv[0] == "cat" {
+			return nil, errors.New("not provisioned")
+		}
+		return nil, nil
+	}
+	var msgs []string
+	pctx := WithProgress(ctx, func(msg string) { msgs = append(msgs, msg) })
+	if err := testManager(rt).EnsureTemplate(pctx); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(msgs, " | ")
+	for _, want := range []string{"creating template", "installing desktop packages"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("progress %q is missing %q", joined, want)
+		}
+	}
+}

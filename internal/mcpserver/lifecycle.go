@@ -69,7 +69,9 @@ func (t *tools) listDesktops(ctx context.Context, _ *mcp.CallToolRequest, _ stru
 	return nil, out, nil
 }
 
-func (t *tools) createDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+func (t *tools) createDesktop(ctx context.Context, req *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+	ctx, stop := withProgress(ctx, req)
+	defer stop()
 	start := time.Now()
 	if err := t.ensureTemplate(ctx); err != nil {
 		return nil, nil, err
@@ -95,7 +97,9 @@ func (t *tools) stopDesktop(ctx context.Context, _ *mcp.CallToolRequest, in name
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("stopped desktop %q", in.Name)}}}, nil, nil
 }
 
-func (t *tools) startDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+func (t *tools) startDesktop(ctx context.Context, req *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+	ctx, stop := withProgress(ctx, req)
+	defer stop()
 	start := time.Now()
 	if err := t.fleet.Start(ctx, in.Name); err != nil {
 		return nil, nil, err

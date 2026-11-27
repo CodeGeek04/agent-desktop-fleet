@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -407,5 +408,65 @@ func TestStopAndStartDesktop(t *testing.T) {
 	}
 	if rt.Machines["adf-a"].State != "running" {
 		t.Fatal("desktop did not start")
+	}
+}
+
+func TestCreateDesktopReportsProgress(t *testing.T) {
+	heartbeat = 5 * time.Millisecond
+	t.Cleanup(func() { heartbeat = 10 * time.Second })
+	rt := fleettest.New() // no template yet: the first create builds it
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		switch {
+		case argv[0] == "cat":
+			return nil, errors.New("not provisioned")
+		case len(argv) > 1 && argv[1] == "/tmp/adf-setup.sh":
+			time.Sleep(30 * time.Millisecond) // a slow package install
+		case len(argv) > 2 && argv[2] == "sh":
+			return testPNG, nil
+		}
+		return nil, nil
+	}
+	ctx := context.Background()
+	m := fleet.NewManager(rt, nil)
+	m.Poll, m.Settle = time.Millisecond, 0
+	server := New(m, Options{Version: "test"})
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := server.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	var mu sync.Mutex
+	var msgs []string
+	client := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0"}, &mcp.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+			mu.Lock()
+			msgs = append(msgs, req.Params.Message)
+			mu.Unlock()
+		},
+	})
+	cs, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	params := &mcp.CallToolParams{Name: "create_desktop", Arguments: map[string]any{"name": "a"}}
+	params.SetProgressToken("p1")
+	res, err := cs.CallTool(ctx, params)
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v result=%s", err, text(res))
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		mu.Lock()
+		joined := strings.Join(msgs, " | ")
+		mu.Unlock()
+		if strings.Contains(joined, "installing desktop packages") && len(msgs) >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("progress messages = %q", joined)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
