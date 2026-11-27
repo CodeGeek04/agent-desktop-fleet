@@ -65,6 +65,7 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&a.smolvmPath, "smolvm", os.Getenv("ADF_SMOLVM"), "path to the smolvm binary (env ADF_SMOLVM)")
 	root.AddCommand(lifecycleCommands(a)...)
+	root.AddCommand(actionCommands(a)...)
 	return root
 }
 
