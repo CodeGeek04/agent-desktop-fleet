@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -179,7 +180,8 @@ func TestToolsAreListedWithDescriptions(t *testing.T) {
 
 // wantTools grows as tools are added in later tasks.
 var wantTools = []string{"list_desktops", "create_desktop", "delete_desktop", "screenshot", "click",
-	"move_mouse", "drag", "scroll", "type_text", "press_key", "cursor_position", "run_command"}
+	"move_mouse", "drag", "scroll", "type_text", "press_key", "cursor_position", "run_command",
+	"start_desktop", "pause_desktop", "fleet_status"}
 
 func desktopRuntime() *fleettest.Fake {
 	rt := newTestRuntime()
@@ -388,5 +390,90 @@ func TestListDesktopsIsNotRecorded(t *testing.T) {
 	call(t, cs, "list_desktops", map[string]any{})
 	if ev := rec.all(); len(ev) != 0 {
 		t.Fatalf("events = %+v", ev)
+	}
+}
+
+func TestPauseAndStartDesktop(t *testing.T) {
+	rt := desktopRuntime()
+	cs := connect(t, rt)
+	if res := call(t, cs, "pause_desktop", map[string]any{"name": "a"}); res.IsError {
+		t.Fatal(text(res))
+	}
+	if rt.Machines["adf-a"].State != "paused" {
+		t.Fatal("desktop is still running")
+	}
+	res := call(t, cs, "start_desktop", map[string]any{"name": "a"})
+	if res.IsError || len(images(res)) != 1 || !strings.Contains(text(res), `started desktop "a"`) {
+		t.Fatalf("isError=%v images=%d text=%q", res.IsError, len(images(res)), text(res))
+	}
+	if rt.Machines["adf-a"].State != "running" {
+		t.Fatal("desktop did not resume")
+	}
+}
+
+func TestFleetStatus(t *testing.T) {
+	res := call(t, connect(t, desktopRuntime()), "fleet_status", map[string]any{})
+	if res.IsError || !strings.Contains(text(res), `"running":1`) || !strings.Contains(text(res), `"more_that_fit"`) {
+		t.Fatalf("result = %s", text(res))
+	}
+}
+
+func TestCreateDesktopReportsProgress(t *testing.T) {
+	heartbeat = 5 * time.Millisecond
+	t.Cleanup(func() { heartbeat = 10 * time.Second })
+	rt := fleettest.New() // no template yet: the first create builds it
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		switch {
+		case argv[0] == "cat":
+			return nil, errors.New("not provisioned")
+		case len(argv) > 1 && argv[1] == "/tmp/adf-setup.sh":
+			time.Sleep(30 * time.Millisecond) // a slow package install
+		case len(argv) > 2 && argv[2] == "sh":
+			return testPNG, nil
+		}
+		return nil, nil
+	}
+	ctx := context.Background()
+	m := fleet.NewManager(rt, nil)
+	m.Poll, m.Settle = time.Millisecond, 0
+	server := New(m, Options{Version: "test"})
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := server.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	var mu sync.Mutex
+	var msgs []string
+	client := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0"}, &mcp.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+			mu.Lock()
+			msgs = append(msgs, req.Params.Message)
+			mu.Unlock()
+		},
+	})
+	cs, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	params := &mcp.CallToolParams{Name: "create_desktop", Arguments: map[string]any{"name": "a"}}
+	params.SetProgressToken("p1")
+	res, err := cs.CallTool(ctx, params)
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v result=%s", err, text(res))
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		mu.Lock()
+		joined := strings.Join(msgs, " | ")
+		mu.Unlock()
+		if strings.Contains(joined, "installing desktop packages") && len(msgs) >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("progress messages = %q", joined)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

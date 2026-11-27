@@ -117,3 +117,47 @@ func (t *tools) withScreenshot(ctx context.Context, desktop string, want *bool, 
 	res.Content = append(res.Content, &mcp.ImageContent{Data: png, MIMEType: "image/png"})
 	return res, nil, nil
 }
+
+// heartbeat is how often a long tool call reports progress when nothing new happened.
+var heartbeat = 10 * time.Second
+
+// withProgress forwards fleet steps to the client as progress notifications, plus a
+// heartbeat, so clients that reset their timeout on progress keep waiting through the
+// first template build. It does nothing unless the client asked for progress.
+func withProgress(ctx context.Context, req *mcp.CallToolRequest) (context.Context, func()) {
+	if req == nil || req.Session == nil || req.Params == nil || req.Params.GetProgressToken() == nil {
+		return ctx, func() {}
+	}
+	token := req.Params.GetProgressToken()
+	var mu sync.Mutex
+	count, last := 0.0, "working"
+	started := time.Now()
+	send := func(msg string) {
+		mu.Lock()
+		count++
+		if msg != "" {
+			last = msg
+		} else {
+			msg = fmt.Sprintf("%s (%s)", last, time.Since(started).Round(time.Second))
+		}
+		p := count
+		mu.Unlock()
+		_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Message: msg, Progress: p})
+	}
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(heartbeat)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				send("")
+			}
+		}
+	}()
+	return fleet.WithProgress(ctx, send), func() { close(done) }
+}

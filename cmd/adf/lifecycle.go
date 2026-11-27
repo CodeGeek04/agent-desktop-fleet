@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/runner"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -121,6 +122,77 @@ func lifecycleCommands(a *app) []*cobra.Command {
 		},
 	}
 
+	start := &cobra.Command{
+		Use:   "start NAME...",
+		Short: "Start stopped desktops",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.setup(); err != nil {
+				return err
+			}
+			for _, name := range args {
+				begin := time.Now()
+				if err := a.fleet.Start(cmd.Context(), name); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "started %s in %s\n", name, time.Since(begin).Round(10*time.Millisecond))
+			}
+			return nil
+		},
+	}
+
+	pause := &cobra.Command{
+		Use:   "pause NAME...",
+		Short: "Pause desktops: free their memory and keep everything; any action resumes them",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.setup(); err != nil {
+				return err
+			}
+			for _, name := range args {
+				if err := a.fleet.Pause(cmd.Context(), name); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "paused", name)
+			}
+			return nil
+		},
+	}
+
+	status := &cobra.Command{
+		Use:   "status",
+		Short: "Show this computer's room for desktops and the limits in force",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := a.setup(); err != nil {
+				return err
+			}
+			c, err := a.fleet.Capacity(cmd.Context())
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if c.HostKnown {
+				fmt.Fprintf(out, "Memory: %s of %s available, %d CPUs, load %.1f\n",
+					fleet.HumanBytes(c.Host.AvailableMemBytes), fleet.HumanBytes(c.Host.TotalMemBytes), c.Host.CPUs, c.Host.Load1)
+			}
+			fmt.Fprintf(out, "Desktops: %d running, %d paused, %d stopped\n", c.Running, c.Paused, c.Stopped)
+			runCap := "no cap on running desktops"
+			if c.Limits.MaxRunning > 0 {
+				runCap = fmt.Sprintf("at most %d running", c.Limits.MaxRunning)
+			}
+			fmt.Fprintf(out, "Limits: %s kept for this computer, %s per desktop, %s\n",
+				fleet.HumanBytes(c.Limits.ReserveBytes), fleet.HumanBytes(c.Limits.DesktopBytes), runCap)
+			if c.MoreThatFit >= 0 {
+				fmt.Fprintf(out, "Room for about %d more desktops\n", c.MoreThatFit)
+			}
+			if idle, err := idleFromEnv(); err == nil && idle > 0 {
+				fmt.Fprintf(out, "Idle desktops pause after %s (ADF_IDLE_PAUSE)\n", humanDuration(idle))
+			}
+			return nil
+		},
+	}
+
 	rm := &cobra.Command{
 		Use:   "rm NAME...",
 		Short: "Stop and delete desktops",
@@ -139,5 +211,5 @@ func lifecycleCommands(a *app) []*cobra.Command {
 		},
 	}
 
-	return []*cobra.Command{doctor, initCmd, create, ls, stop, rm}
+	return []*cobra.Command{doctor, initCmd, status, create, ls, start, pause, stop, rm}
 }

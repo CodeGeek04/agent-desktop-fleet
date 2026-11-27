@@ -1,7 +1,8 @@
 #!/bin/sh
 # Provision the agent desktop inside a Debian guest. Runs once per template.
 # Stack: Xvfb (virtual X display), openbox (window manager), tint2 (taskbar),
-# xdotool (input), scrot (screenshots), Firefox ESR.
+# xdotool (input), scrot (screenshots), Firefox ESR, and fonts for most scripts
+# (Noto core, WenQuanYi Micro Hei for Chinese, Japanese and Korean, colour emoji: 56 MB).
 set -eu
 
 export DEBIAN_FRONTEND=noninteractive
@@ -9,6 +10,7 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   xvfb openbox tint2 xdotool scrot \
   firefox-esr fonts-dejavu-core dbus-x11 ca-certificates procps \
+  fonts-noto-core fonts-wqy-microhei fonts-noto-color-emoji \
   >/dev/null
 apt-get clean
 rm -rf /var/lib/apt/lists/*

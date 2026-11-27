@@ -149,13 +149,23 @@ func (c *Computer) Scroll(ctx context.Context, x, y int, dir Direction, amount i
 	return err
 }
 
-// Type types text as keyboard input.
+// Type types text as keyboard input. Each newline is sent as the Return key: xdotool types
+// "\n" as Linefeed, which browsers ignore, and agents often end a URL or search with "\n".
 func (c *Computer) Type(ctx context.Context, text string) error {
-	if text == "" {
-		return nil
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	for i, line := range lines {
+		if line != "" {
+			if _, err := c.xdotool(ctx, "type", "--delay", "12", "--", line); err != nil {
+				return err
+			}
+		}
+		if i < len(lines)-1 {
+			if _, err := c.xdotool(ctx, "key", "Return"); err != nil {
+				return err
+			}
+		}
 	}
-	_, err := c.xdotool(ctx, "type", "--delay", "12", "--", text)
-	return err
+	return nil
 }
 
 // keyRE allows xdotool key names and chords such as Return, ctrl+l, ctrl+shift+Tab, F5.

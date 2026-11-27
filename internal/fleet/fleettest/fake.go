@@ -136,7 +136,13 @@ func (f *Fake) Exec(_ context.Context, name string, stdin io.Reader, argv ...str
 	f.mu.Lock()
 	f.record("exec " + name + " " + strings.Join(argv, " "))
 	fn := f.ExecFunc
+	m, known := f.Machines[name]
+	stopped := known && m.State != "running"
 	f.mu.Unlock()
+	if stopped {
+		// Like smolvm: exec into a stopped machine fails with a generic error.
+		return nil, &smolvm.Error{Code: "SMOLVM_ERROR", Message: "machine '" + name + "' is not running"}
+	}
 	if fn != nil {
 		return fn(name, in, argv)
 	}
@@ -153,4 +159,30 @@ func (f *Fake) Stats(_ context.Context, name string) (smolvm.Stats, error) {
 		return fn(name)
 	}
 	return smolvm.Stats{}, nil
+}
+
+// Pause implements fleet.Runtime.
+func (f *Fake) Pause(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("pause " + name)
+	m, ok := f.Machines[name]
+	if !ok || m.State != "running" {
+		return fmt.Errorf("machine %s is not running", name)
+	}
+	m.State = "paused"
+	return nil
+}
+
+// Resume implements fleet.Runtime.
+func (f *Fake) Resume(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("resume " + name)
+	m, ok := f.Machines[name]
+	if !ok || m.State != "paused" {
+		return fmt.Errorf("machine %s is not paused", name)
+	}
+	m.State = "running"
+	return nil
 }

@@ -26,8 +26,9 @@ Desktops are branched from a running template, so they share its memory until th
 ## Use with Claude Code, Cursor and other MCP clients
 
 `adf mcp` serves the desktops as MCP tools: `create_desktop`, `list_desktops`, `delete_desktop`,
-`screenshot`, `click`, `move_mouse`, `drag`, `scroll`, `type_text`, `press_key`, `cursor_position`
-and `run_command`. Actions return a screenshot of the result by default.
+`start_desktop`, `pause_desktop`, `fleet_status`, `screenshot`, `click`, `move_mouse`, `drag`,
+`scroll`, `type_text`, `press_key`, `cursor_position` and `run_command`. Actions return a
+screenshot of the result by default, and an action on a paused or stopped desktop wakes it.
 
 Claude Code:
 
@@ -48,6 +49,30 @@ ADF_MCP_TOKEN=change-me ./bin/adf mcp --http 127.0.0.1:7400   # endpoint: http:/
 ```
 
 The first `create_desktop` on a machine builds the desktop template (one to two minutes).
+
+## Room and limits
+
+`adf status` shows free memory, desktops by state, the limits and how many more desktops fit.
+Agents get the same from the `fleet_status` tool.
+
+Measured on an Apple M5 with 24 GB:
+
+| | CPU | Host memory | Disk |
+|---|---|---|---|
+| Idle desktop | 0.1% of one core | 200 to 450 MB | about 10 MB |
+| Paused desktop | none | none | about 450 MB |
+
+A desktop is created in 0.5 to 1 s, pauses in about 6 s and resumes in 2 to 3 s with its windows
+intact. Desktops with no activity for 10 minutes are paused automatically; the next action
+resumes them. A new or waking desktop is refused, with advice, when it would leave the computer
+short of memory.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ADF_RESERVE_MB` | 2048 | memory always kept free for the computer itself |
+| `ADF_DESKTOP_MB` | 512 | memory budgeted per desktop |
+| `ADF_MAX_DESKTOPS` | none | hard cap on running desktops |
+| `ADF_IDLE_PAUSE` | 10m | pause desktops idle this long; `0` turns it off |
 
 ## Watch and take over: the console
 

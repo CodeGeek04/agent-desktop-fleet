@@ -7,7 +7,8 @@ import (
 )
 
 func TestScriptsMatchConstants(t *testing.T) {
-	for _, pkg := range []string{"xvfb", "openbox", "xdotool", "scrot", "firefox-esr"} {
+	for _, pkg := range []string{"xvfb", "openbox", "xdotool", "scrot", "firefox-esr",
+		"fonts-noto-core", "fonts-wqy-microhei", "fonts-noto-color-emoji"} {
 		if !strings.Contains(SetupScript, pkg) {
 			t.Errorf("setup script does not install %s", pkg)
 		}

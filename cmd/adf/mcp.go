@@ -32,9 +32,14 @@ func mcpCommand(a *app) *cobra.Command {
 			if err := a.setup(); err != nil {
 				return err
 			}
+			idle, err := idleFromEnv()
+			if err != nil {
+				return err
+			}
 			opts := mcpserver.Options{Version: version, Settle: mcpserver.DefaultSettle}
 			if log := activityLog(); log != nil {
 				opts.Activity = log // assigned only when non-nil, so the interface is never a typed nil
+				go runIdlePauser(cmd.Context(), a.fleet, log.Path, idle)
 			}
 			server := mcpserver.New(a.fleet, opts)
 			if httpAddr == "" {

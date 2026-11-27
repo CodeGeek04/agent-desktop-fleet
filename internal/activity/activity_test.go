@@ -132,3 +132,21 @@ func TestConcurrentAppendsStayValid(t *testing.T) {
 		t.Fatalf("got %d events, want 200 (err %v)", len(events), err)
 	}
 }
+
+func TestLastActive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "activity.jsonl")
+	l := &Log{Path: path}
+	_ = l.Append(Event{Time: time.Unix(100, 0), Desktop: "a"})
+	_ = l.Append(Event{Time: time.Unix(300, 0), Desktop: "a"})
+	_ = l.Append(Event{Time: time.Unix(200, 0), Desktop: "b"})
+	last, err := LastActive(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !last["a"].Equal(time.Unix(300, 0)) || !last["b"].Equal(time.Unix(200, 0)) || len(last) != 2 {
+		t.Fatalf("last = %v", last)
+	}
+	if m, err := LastActive(filepath.Join(t.TempDir(), "none")); err != nil || len(m) != 0 {
+		t.Fatalf("missing file: %v %v", m, err)
+	}
+}

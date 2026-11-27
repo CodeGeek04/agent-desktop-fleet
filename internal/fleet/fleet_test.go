@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet/fleettest"
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/host"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -333,5 +334,169 @@ func TestMemoryRejectsGarbage(t *testing.T) {
 	rt.ExecFunc = func(_, _ string, _ []string) ([]byte, error) { return []byte("nonsense"), nil }
 	if _, err := testManager(rt).Memory(ctx, "a"); err == nil {
 		t.Fatal("expected an error for output without MemTotal and MemAvailable")
+	}
+}
+
+func TestStartBringsStoppedDesktopBack(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "stopped", Labels: map[string]string{LabelRole: RoleDesktop}}
+	if err := testManager(rt).Start(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"start adf-a branchable=false",
+		"exec adf-a desktop-start",
+		"exec adf-a env DISPLAY=:1 xdotool search --onlyvisible --class firefox",
+	}
+	if got := rt.Calls(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("calls = %q\nwant %q", got, want)
+	}
+}
+
+func TestActionOnStoppedDesktopStartsItAndRetries(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "stopped", Labels: map[string]string{LabelRole: RoleDesktop}}
+	if err := testManager(rt).Computer("a").Key(ctx, "Return"); err != nil {
+		t.Fatalf("action on a stopped desktop should start it and succeed: %v", err)
+	}
+	got := rt.Calls()
+	if got[0] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" || got[1] != "start adf-a branchable=false" ||
+		got[len(got)-1] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" {
+		t.Fatalf("calls = %q", got)
+	}
+}
+
+func TestActionOnMissingDesktopIsNotRetried(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, _ []string) ([]byte, error) {
+		return nil, &smolvm.Error{Code: "NOT_FOUND", Message: "vm not found: adf-zzz"}
+	}
+	if err := testManager(rt).Computer("zzz").Key(ctx, "Return"); !smolvm.IsNotFound(err) {
+		t.Fatalf("err = %v, want not found", err)
+	}
+	if got := rt.Calls(); len(got) != 1 {
+		t.Fatalf("calls = %q, want a single attempt", got)
+	}
+}
+
+func TestProgressReportsTemplateSteps(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		if argv[0] == "cat" {
+			return nil, errors.New("not provisioned")
+		}
+		return nil, nil
+	}
+	var msgs []string
+	pctx := WithProgress(ctx, func(msg string) { msgs = append(msgs, msg) })
+	if err := testManager(rt).EnsureTemplate(pctx); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(msgs, " | ")
+	for _, want := range []string{"creating template", "installing desktop packages"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("progress %q is missing %q", joined, want)
+		}
+	}
+}
+
+func desktopMachine(name, state string, created time.Time) *smolvm.Machine {
+	return &smolvm.Machine{Name: DesktopPrefix + name, State: state, CreatedAt: created.Unix(),
+		Labels: map[string]string{LabelRole: RoleDesktop}}
+}
+
+func TestCreateRefusedWhenMemoryIsLow(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	m := testManager(rt)
+	m.Host = func() (host.Stats, error) {
+		return host.Stats{TotalMemBytes: 8 << 30, AvailableMemBytes: 2200 << 20}, nil
+	}
+	_, err := m.CreateDesktop(ctx, "a")
+	if !errors.Is(err, ErrNoCapacity) || !strings.Contains(err.Error(), "delete") {
+		t.Fatalf("err = %v, want ErrNoCapacity with advice", err)
+	}
+	for _, c := range rt.Calls() {
+		if strings.HasPrefix(c, "branch") {
+			t.Fatal("a refused desktop must not be branched")
+		}
+	}
+}
+
+func TestCreateRefusedAtMaxRunning(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	m := testManager(rt)
+	m.Limits.MaxRunning = 1
+	if _, err := m.CreateDesktop(ctx, "b"); !errors.Is(err, ErrNoCapacity) {
+		t.Fatalf("err = %v, want ErrNoCapacity", err)
+	}
+}
+
+func TestCapacity(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	rt.Machines["adf-b"] = desktopMachine("b", "running", time.Now())
+	rt.Machines["adf-c"] = desktopMachine("c", "paused", time.Now())
+	rt.Machines["adf-d"] = desktopMachine("d", "stopped", time.Now())
+	m := testManager(rt)
+	m.Host = func() (host.Stats, error) {
+		return host.Stats{TotalMemBytes: 16 << 30, AvailableMemBytes: 5 << 30, CPUs: 8}, nil
+	}
+	c, err := m.Capacity(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (5 GiB available - 2 GiB reserve) / 512 MiB per desktop = 6
+	if c.Running != 2 || c.Paused != 1 || c.Stopped != 1 || c.MoreThatFit != 6 || !c.HostKnown || c.Host.CPUs != 8 {
+		t.Fatalf("capacity = %+v", c)
+	}
+	m.Limits.MaxRunning = 3
+	if c, _ := m.Capacity(ctx); c.MoreThatFit != 1 {
+		t.Fatalf("with a cap of 3 and 2 running, more that fit = %d, want 1", c.MoreThatFit)
+	}
+}
+
+func TestPausedDesktopWakesOnAction(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	m := testManager(rt)
+	if err := m.Pause(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if rt.Machines["adf-a"].State != "paused" {
+		t.Fatal("desktop was not paused")
+	}
+	if err := m.Computer("a").Key(ctx, "Return"); err != nil {
+		t.Fatalf("action on a paused desktop: %v", err)
+	}
+	got := rt.Calls()
+	if got[0] != "pause adf-a" || got[2] != "resume adf-a" || got[len(got)-1] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" {
+		t.Fatalf("calls = %q", got)
+	}
+	for _, c := range got {
+		if c == "exec adf-a desktop-start" {
+			t.Fatal("resuming keeps memory, so the session must not be restarted")
+		}
+	}
+}
+
+func TestPauseIdle(t *testing.T) {
+	now := time.Now()
+	rt := fleettest.New()
+	warmTemplate(rt)
+	rt.Machines["adf-old"] = desktopMachine("old", "running", now.Add(-time.Hour))
+	rt.Machines["adf-busy"] = desktopMachine("busy", "running", now.Add(-time.Hour))
+	rt.Machines["adf-new"] = desktopMachine("new", "running", now.Add(-time.Minute))
+	rt.Machines["adf-zzz"] = desktopMachine("zzz", "paused", now.Add(-time.Hour))
+	lastActive := map[string]time.Time{"busy": now.Add(-2 * time.Minute), "old": now.Add(-30 * time.Minute)}
+	paused, err := testManager(rt).PauseIdle(ctx, lastActive, 10*time.Minute, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(paused, []string{"old"}) {
+		t.Fatalf("paused = %q, want only old", paused)
 	}
 }
