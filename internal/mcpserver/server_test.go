@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet/fleettest"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/runner"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
 
@@ -169,7 +171,7 @@ func TestToolsAreListedWithDescriptions(t *testing.T) {
 
 // wantTools grows as tools are added in later tasks.
 var wantTools = []string{"list_desktops", "create_desktop", "delete_desktop", "screenshot", "click",
-	"move_mouse", "drag", "scroll", "type_text", "press_key", "cursor_position"}
+	"move_mouse", "drag", "scroll", "type_text", "press_key", "cursor_position", "run_command"}
 
 func desktopRuntime() *fleettest.Fake {
 	rt := newTestRuntime()
@@ -265,5 +267,58 @@ func TestUnknownDesktopExplainsWhatToDo(t *testing.T) {
 	res := call(t, connect(t, rt), "screenshot", map[string]any{"desktop": "zzz"})
 	if !res.IsError || !strings.Contains(text(res), "create_desktop") {
 		t.Fatalf("result = %s", text(res))
+	}
+}
+
+func TestRunCommandSuccess(t *testing.T) {
+	rt := desktopRuntime()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) { return []byte("hi\n"), nil }
+	res := call(t, connect(t, rt), "run_command", map[string]any{"desktop": "a", "command": "echo hi"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if got := rt.Calls()[0]; got != "exec adf-a sh -c echo hi" {
+		t.Fatalf("call = %q", got)
+	}
+	var out struct {
+		ExitCode int    `json:"exit_code"`
+		Stdout   string `json:"stdout"`
+	}
+	if err := json.Unmarshal([]byte(text(res)), &out); err != nil || out.ExitCode != 0 || out.Stdout != "hi\n" {
+		t.Fatalf("out=%+v err=%v text=%s", out, err, text(res))
+	}
+}
+
+func TestRunCommandNonZeroExitIsAResultNotAnError(t *testing.T) {
+	rt := desktopRuntime()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		return []byte("partial"), &runner.ExitError{Name: "smolvm", Code: 3, Stderr: []byte("bad thing\n")}
+	}
+	res := call(t, connect(t, rt), "run_command", map[string]any{"desktop": "a", "command": "false"})
+	if res.IsError {
+		t.Fatalf("non-zero exit must not be a tool error: %s", text(res))
+	}
+	for _, want := range []string{`"exit_code":3`, `"stdout":"partial"`, `"stderr":"bad thing\n"`} {
+		if !strings.Contains(text(res), want) {
+			t.Errorf("result %s is missing %s", text(res), want)
+		}
+	}
+}
+
+func TestRunCommandTruncatesLongOutput(t *testing.T) {
+	rt := desktopRuntime()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) { return bytes.Repeat([]byte("x"), maxOutput+100), nil }
+	res := call(t, connect(t, rt), "run_command", map[string]any{"desktop": "a", "command": "yes"})
+	if res.IsError || !strings.Contains(text(res), "[truncated") {
+		t.Fatalf("expected truncation marker, got %d bytes", len(text(res)))
+	}
+}
+
+func TestRunCommandOtherErrorsAreToolErrors(t *testing.T) {
+	rt := desktopRuntime()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) { return nil, errors.New("smolvm crashed") }
+	res := call(t, connect(t, rt), "run_command", map[string]any{"desktop": "a", "command": "true"})
+	if !res.IsError {
+		t.Fatal("expected a tool error")
 	}
 }

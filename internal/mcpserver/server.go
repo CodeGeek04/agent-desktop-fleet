@@ -47,6 +47,7 @@ func New(f *fleet.Manager, opts Options) *mcp.Server {
 	t := &tools{fleet: f, opts: opts}
 	t.addLifecycle(server)
 	t.addActions(server)
+	t.addCommand(server)
 	return server
 }
 
