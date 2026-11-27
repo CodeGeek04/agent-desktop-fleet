@@ -14,6 +14,7 @@
 #   --no-open  do not open the console in a browser
 #
 # Needs adf and the Claude Code CLI (claude). Costs roughly $1 to $2 with Sonnet.
+# The agents use your default Claude login; set CLAUDE_CONFIG_DIR to use another profile.
 # The shop scene uses www.saucedemo.com, a public demo store made for test automation.
 set -eu
 
@@ -60,6 +61,7 @@ echo "Checking the Claude Code login..."
 if ! claude -p "Reply with OK" --model haiku > "$work/login.txt" 2>&1; then
   cat "$work/login.txt" >&2
   echo "Claude Code could not run. Run 'claude', type /login, then try the demo again." >&2
+  echo "If you keep several Claude profiles, pick one: CLAUDE_CONFIG_DIR=~/.claude-work scripts/demo.sh" >&2
   exit 1
 fi
 
