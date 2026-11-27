@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,6 +160,52 @@ func TestListIncludesStatsAfterRefresh(t *testing.T) {
 	if len(out.Desktops) != 1 || out.Desktops[0].Name != "a" || out.Desktops[0].Stats == nil ||
 		out.Desktops[0].Stats.CPUPercent != 12.5 || out.Desktops[0].Stats.MemTotalBytes != 400 {
 		t.Fatalf("desktops = %+v", out.Desktops)
+	}
+}
+
+func TestCollectorIdlesWithoutViewers(t *testing.T) {
+	rt := newRuntime()
+	var samples atomic.Int32
+	rt.StatsFunc = func(string) (smolvm.Stats, error) { samples.Add(1); return smolvm.Stats{}, nil }
+	s, _ := newServer(t, rt, Options{StatsEvery: 5 * time.Millisecond})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.RunCollector(ctx); close(done) }()
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+	<-done
+	if n := samples.Load(); n != 0 {
+		t.Fatalf("collector sampled %d times with nobody watching, want 0", n)
+	}
+}
+
+func TestCollectorSamplesOnceSomeoneWatches(t *testing.T) {
+	rt := newRuntime()
+	var samples atomic.Int32
+	rt.StatsFunc = func(string) (smolvm.Stats, error) { samples.Add(1); return smolvm.Stats{}, nil }
+	s, ts := newServer(t, rt, Options{StatsEvery: time.Hour}) // only the wake-up can trigger a sample
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go s.RunCollector(ctx)
+	do(t, ts, "GET", "/api/desktops", "", true)
+	deadline := time.Now().Add(2 * time.Second)
+	for samples.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("opening the console did not trigger a sample")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestStatsPeriodGrowsWithFleet(t *testing.T) {
+	base := 3 * time.Second
+	for _, c := range []struct {
+		running int
+		want    time.Duration
+	}{{0, base}, {10, base}, {11, 2 * base}, {40, 4 * base}} {
+		if got := statsPeriod(base, c.running); got != c.want {
+			t.Errorf("statsPeriod(%v, %d) = %v, want %v", base, c.running, got, c.want)
+		}
 	}
 }
 

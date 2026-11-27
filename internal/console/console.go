@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/activity"
@@ -43,7 +44,14 @@ type Server struct {
 
 	statsMu sync.Mutex
 	stats   map[string]desktopStats
+
+	lastView atomic.Int64  // when the page last listed desktops (unix ns): someone has the console open
+	wake     chan struct{} // tells the collector that someone just opened the console
 }
+
+// viewerGone is how long after the page's last desktop list the console counts as closed. The page
+// lists desktops every 2 s while its tab is visible.
+const viewerGone = 15 * time.Second
 
 type desktopStats struct {
 	CPUPercent    float64 `json:"cpu_percent"`
@@ -68,7 +76,8 @@ func New(f *fleet.Manager, opts Options) *Server {
 	if opts.StatsEvery == 0 {
 		opts.StatsEvery = 3 * time.Second
 	}
-	return &Server{fleet: f, opts: opts, frames: frameCache{entries: map[string]*frameEntry{}}, stats: map[string]desktopStats{}}
+	return &Server{fleet: f, opts: opts, frames: frameCache{entries: map[string]*frameEntry{}}, stats: map[string]desktopStats{},
+		wake: make(chan struct{}, 1)}
 }
 
 // Handler serves the static page without a token and the API with one.
@@ -95,26 +104,50 @@ func (s *Server) Handler() http.Handler {
 	return root
 }
 
-// RunCollector refreshes desktop metrics until ctx is done.
+// RunCollector refreshes desktop metrics until ctx is done. Each sample runs two commands in every
+// running desktop, so it samples only while someone has the console open, and less often in big fleets.
 func (s *Server) RunCollector(ctx context.Context) {
 	ticker := time.NewTicker(s.opts.StatsEvery)
 	defer ticker.Stop()
+	var last time.Time
+	running := 0
 	for {
-		s.refreshStats(ctx)
+		if s.watched() && time.Since(last) >= statsPeriod(s.opts.StatsEvery, running) {
+			running = s.refreshStats(ctx)
+			last = time.Now()
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-s.wake:
+			last = time.Time{} // the console was just opened: sample now
 		}
 	}
 }
 
-// refreshStats samples every running desktop in parallel (each sample takes about 0.5 s).
-func (s *Server) refreshStats(ctx context.Context) {
+// watched reports whether the page has listed desktops recently.
+func (s *Server) watched() bool {
+	return time.Since(time.Unix(0, s.lastView.Load())) < viewerGone
+}
+
+// statsPeriod is how often to sample: base for up to 10 running desktops, and base once more for
+// every further 10, so the commands run per second stay about the same as the fleet grows.
+func statsPeriod(base time.Duration, running int) time.Duration {
+	if running <= 10 {
+		return base
+	}
+	return base * time.Duration((running+9)/10)
+}
+
+// refreshStats samples every running desktop in parallel (each sample takes about 0.5 s) and
+// returns how many desktops are running.
+func (s *Server) refreshStats(ctx context.Context) int {
 	ds, err := s.fleet.List(ctx)
 	if err != nil {
-		return
+		return 0
 	}
+	running := 0
 	fresh := map[string]desktopStats{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -123,6 +156,7 @@ func (s *Server) refreshStats(ctx context.Context) {
 		if d.State != "running" {
 			continue
 		}
+		running++
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
@@ -146,6 +180,7 @@ func (s *Server) refreshStats(ctx context.Context) {
 	s.statsMu.Lock()
 	s.stats = fresh
 	s.statsMu.Unlock()
+	return running
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -205,6 +240,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
+	if prev := s.lastView.Swap(time.Now().UnixNano()); time.Since(time.Unix(0, prev)) >= viewerGone {
+		select {
+		case s.wake <- struct{}{}:
+		default:
+		}
+	}
 	ds, err := s.fleet.List(r.Context())
 	if err != nil {
 		writeErr(w, err)
