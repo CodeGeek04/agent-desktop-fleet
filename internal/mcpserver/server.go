@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/activity"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/computer"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
@@ -17,8 +18,9 @@ import (
 
 // Options configures the server.
 type Options struct {
-	Version string        // reported to clients
-	Settle  time.Duration // wait between an action and its follow-up screenshot
+	Version  string            // reported to clients
+	Settle   time.Duration     // wait between an action and its follow-up screenshot
+	Activity activity.Recorder // receives one event per tool call that touches a desktop; nil disables
 }
 
 // DefaultSettle gives pages a moment to react before the follow-up screenshot.

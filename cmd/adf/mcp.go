@@ -32,7 +32,11 @@ func mcpCommand(a *app) *cobra.Command {
 			if err := a.setup(); err != nil {
 				return err
 			}
-			server := mcpserver.New(a.fleet, mcpserver.Options{Version: version, Settle: mcpserver.DefaultSettle})
+			opts := mcpserver.Options{Version: version, Settle: mcpserver.DefaultSettle}
+			if log := activityLog(); log != nil {
+				opts.Activity = log // assigned only when non-nil, so the interface is never a typed nil
+			}
+			server := mcpserver.New(a.fleet, opts)
 			if httpAddr == "" {
 				return server.Run(cmd.Context(), &mcp.StdioTransport{})
 			}

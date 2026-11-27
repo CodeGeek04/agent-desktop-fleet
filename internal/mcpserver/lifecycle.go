@@ -34,13 +34,13 @@ func (t *tools) addLifecycle(s *mcp.Server) {
 			"Each desktop is an isolated microVM. The very first call on a machine builds the desktop " +
 			"template, which takes one to two minutes; later calls take about a second.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), OpenWorldHint: ptr(false)},
-	}, t.createDesktop)
+	}, recorded(t, "create_desktop", nameOf, nil, t.createDesktop))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delete_desktop",
 		Description: "Stop and permanently delete a desktop and everything on it.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(true), IdempotentHint: true, OpenWorldHint: ptr(false)},
-	}, t.deleteDesktop)
+	}, recorded(t, "delete_desktop", nameOf, nil, t.deleteDesktop))
 }
 
 func (t *tools) listDesktops(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listOut, error) {
