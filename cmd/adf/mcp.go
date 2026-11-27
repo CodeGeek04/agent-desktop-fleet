@@ -2,20 +2,17 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/httpauth"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/mcpserver"
 )
 
@@ -49,7 +46,7 @@ func mcpCommand(a *app) *cobra.Command {
 
 func serveHTTP(ctx context.Context, server *mcp.Server, addr, token string) error {
 	if token == "" {
-		t, err := newToken()
+		t, err := httpauth.NewToken()
 		if err != nil {
 			return err
 		}
@@ -58,7 +55,7 @@ func serveHTTP(ctx context.Context, server *mcp.Server, addr, token string) erro
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{Stateless: true})
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", requireToken(token, handler))
+	mux.Handle("/mcp", httpauth.RequireToken(token, handler))
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -77,27 +74,4 @@ func serveHTTP(ctx context.Context, server *mcp.Server, addr, token string) erro
 		return err
 	}
 	return nil
-}
-
-// requireToken rejects requests without "Authorization: Bearer <token>".
-func requireToken(token string, next http.Handler) http.Handler {
-	want := []byte(token)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		scheme, got, ok := strings.Cut(r.Header.Get("Authorization"), " ")
-		if !ok || !strings.EqualFold(scheme, "Bearer") || subtle.ConstantTimeCompare([]byte(got), want) != 1 {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// newToken returns 32 random bytes as hex.
-func newToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
