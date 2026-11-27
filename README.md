@@ -23,8 +23,38 @@ go build -o bin/adf ./cmd/adf
 Each desktop is a smolvm microVM running Xvfb, openbox and Firefox at 1280x800.
 Desktops are branched from a running template, so they share its memory until they change it.
 
+## Use with Claude Code, Cursor and other MCP clients
+
+`adf mcp` serves the desktops as MCP tools: `create_desktop`, `list_desktops`, `delete_desktop`,
+`screenshot`, `click`, `move_mouse`, `drag`, `scroll`, `type_text`, `press_key`, `cursor_position`
+and `run_command`. Actions return a screenshot of the result by default.
+
+Claude Code:
+
+```sh
+claude mcp add adf -- "$(pwd)/bin/adf" mcp
+```
+
+Cursor (`~/.cursor/mcp.json`) and other clients that take a JSON config:
+
+```json
+{ "mcpServers": { "adf": { "command": "/absolute/path/to/bin/adf", "args": ["mcp"] } } }
+```
+
+Remote clients can use streamable HTTP with a bearer token:
+
+```sh
+ADF_MCP_TOKEN=change-me ./bin/adf mcp --http 127.0.0.1:7400   # endpoint: http://127.0.0.1:7400/mcp
+```
+
+The first `create_desktop` on a machine builds the desktop template (one to two minutes).
+
+## Repository layout
+
+- `cmd/adf`, `internal/`: the `adf` CLI and MCP server
+- `docs/superpowers/plans/`: implementation plans
 - `reports/`: market and technical research (November 2026)
 - `research_notes/`: raw notes behind the report
 - `spike/`: runtime evaluation (smolvm vs microsandbox) with scripts and results
 
-License: Apache-2.0 (to be added with the first code).
+License: Apache-2.0 (see `LICENSE`).

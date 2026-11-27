@@ -23,3 +23,28 @@ func TestScriptsMatchConstants(t *testing.T) {
 		t.Error("Version must not be empty")
 	}
 }
+
+func TestFirefoxStartsClean(t *testing.T) {
+	for _, pref := range []string{
+		`pref("browser.aboutwelcome.enabled", false);`,
+		`pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);`,
+		`pref("browser.sessionstore.resume_from_crash", false);`,
+		`pref("browser.newtabpage.enabled", false);`,
+	} {
+		if !strings.Contains(SetupScript, pref) {
+			t.Errorf("setup script is missing %s", pref)
+		}
+	}
+	if !strings.Contains(SetupScript, "/usr/lib/firefox-esr/defaults/pref/adf.js") {
+		t.Error("prefs must go to Firefox's defaults/pref directory")
+	}
+	if strings.Contains(StartScript, "pgrep -f") {
+		t.Error("start script must match processes by name (pgrep -x), not by command line")
+	}
+	if !strings.Contains(ResetBrowserScript, "/root/.config/mozilla") {
+		t.Error("browser reset must remove the XDG profile directory")
+	}
+	if strings.Contains(ResetBrowserScript, "pkill -f") {
+		t.Error("browser reset must not use pkill -f, which can match its own shell")
+	}
+}
