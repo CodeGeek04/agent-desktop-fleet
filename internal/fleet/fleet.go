@@ -141,6 +141,7 @@ func (m *Manager) EnsureTemplate(ctx context.Context) error {
 		{image.SetupScript, []string{"sh", "-c", "cat > /tmp/adf-setup.sh"}},
 		{"", []string{"sh", "/tmp/adf-setup.sh"}},
 		{image.StartScript, []string{"sh", "-c", "cat > /usr/local/bin/desktop-start && chmod 755 /usr/local/bin/desktop-start"}},
+		{"", []string{"sh", "-c", image.ResetBrowserScript}},
 		{"", []string{"sh", "-c", "echo " + image.Version + " > /etc/adf-image-version"}},
 	}
 	for _, s := range steps {

@@ -13,22 +13,34 @@ apt-get install -y -qq --no-install-recommends \
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
-# Firefox: no first-run pages, telemetry prompts, default-browser checks or session restore.
+# Firefox policies: no telemetry, studies or default-browser checks.
 mkdir -p /etc/firefox-esr/policies
 cat > /etc/firefox-esr/policies/policies.json <<'EOF'
 {
   "policies": {
     "DisableTelemetry": true,
     "DisableFirefoxStudies": true,
-    "DontCheckDefaultBrowser": true,
-    "OverrideFirstRunPage": "",
-    "OverridePostUpdatePage": "",
-    "UserMessaging": { "SkipOnboarding": true, "WhatsNew": false, "FeatureRecommendations": false },
-    "Homepage": { "URL": "about:blank", "StartPage": "homepage" },
-    "Preferences": {
-      "browser.sessionstore.resume_from_crash": { "Value": false, "Status": "locked" }
-    }
+    "DontCheckDefaultBrowser": true
   }
 }
+EOF
+
+# Firefox default prefs: a blank window with no first-run, onboarding, privacy-notice
+# or session-restore tabs. Policies alone do not suppress these on Firefox 153 ESR.
+cat > /usr/lib/firefox-esr/defaults/pref/adf.js <<'EOF'
+pref("browser.aboutwelcome.enabled", false);
+pref("trailhead.firstrun.didSeeAboutWelcome", true);
+pref("browser.startup.homepage_override.mstone", "ignore");
+pref("startup.homepage_welcome_url", "");
+pref("startup.homepage_welcome_url.additional", "");
+pref("startup.homepage_override_url", "");
+pref("datareporting.policy.firstRunURL", "");
+pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
+pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+pref("browser.shell.checkDefaultBrowser", false);
+pref("browser.sessionstore.resume_from_crash", false);
+pref("browser.startup.page", 0);
+pref("browser.newtabpage.enabled", false);
+pref("browser.toolbars.bookmarks.visibility", "never");
 EOF
 echo "desktop packages installed"

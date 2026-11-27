@@ -53,6 +53,7 @@ func TestEnsureTemplateCreatesAndProvisions(t *testing.T) {
 		"exec adf-template sh -c cat > /tmp/adf-setup.sh",
 		"exec adf-template sh /tmp/adf-setup.sh",
 		"exec adf-template sh -c cat > /usr/local/bin/desktop-start && chmod 755 /usr/local/bin/desktop-start",
+		"exec adf-template sh -c " + image.ResetBrowserScript,
 		"exec adf-template sh -c echo " + image.Version + " > /etc/adf-image-version",
 	}
 	if got := rt.Calls(); !reflect.DeepEqual(got, want) {

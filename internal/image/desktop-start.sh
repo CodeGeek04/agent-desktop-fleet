@@ -14,6 +14,6 @@ until [ -S /tmp/.X11-unix/X1 ] || [ "$i" -ge 100 ]; do i=$((i + 1)); sleep 0.05;
 
 pgrep -x openbox >/dev/null || nohup openbox >/tmp/openbox.log 2>&1 &
 pgrep -x tint2 >/dev/null || nohup tint2 >/tmp/tint2.log 2>&1 &
-pgrep -f firefox-esr >/dev/null || nohup firefox-esr --new-instance >/tmp/firefox.log 2>&1 &
+pgrep -x firefox-esr >/dev/null || nohup firefox-esr --new-instance >/tmp/firefox.log 2>&1 &
 
 echo "desktop started on DISPLAY=:1 (${GEOMETRY})"
