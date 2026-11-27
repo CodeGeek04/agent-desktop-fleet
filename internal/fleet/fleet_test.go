@@ -531,3 +531,55 @@ func TestPauseIdleDoesNothingWhenPauseIsUnsupported(t *testing.T) {
 		t.Fatalf("paused=%q err=%v calls=%q", paused, err, rt.Calls())
 	}
 }
+
+func TestEnsureTemplateUsesPrebuiltImage(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) { return []byte(image.Version), nil }
+	m := testManager(rt)
+	m.PrebuiltImage = func(_ context.Context, progress func(string)) (string, error) {
+		progress("downloading the desktop image: 50% of 300 MB")
+		return "/cache/adf-desktop.tar.gz", nil
+	}
+	var msgs []string
+	if err := m.EnsureTemplate(WithProgress(ctx, func(msg string) { msgs = append(msgs, msg) })); err != nil {
+		t.Fatal(err)
+	}
+	if img := rt.Machines[TemplateName].Image; img != "/cache/adf-desktop.tar.gz" {
+		t.Fatalf("template image = %q", img)
+	}
+	for _, c := range rt.Calls() {
+		if strings.Contains(c, "adf-setup.sh") {
+			t.Fatal("a prebuilt image must not be provisioned again")
+		}
+	}
+	if !strings.Contains(strings.Join(msgs, " | "), "downloading the desktop image") {
+		t.Fatalf("download progress was not forwarded: %q", msgs)
+	}
+}
+
+func TestEnsureTemplateFallsBackWhenPrebuiltIsUnavailable(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		if argv[0] == "cat" {
+			return nil, errors.New("not provisioned")
+		}
+		return nil, nil
+	}
+	m := testManager(rt)
+	m.PrebuiltImage = func(context.Context, func(string)) (string, error) { return "", errors.New("404 Not Found") }
+	if err := m.EnsureTemplate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if img := rt.Machines[TemplateName].Image; img != DefaultImage {
+		t.Fatalf("template image = %q, want %q", img, DefaultImage)
+	}
+	provisioned := false
+	for _, c := range rt.Calls() {
+		if c == "exec adf-template sh /tmp/adf-setup.sh" {
+			provisioned = true
+		}
+	}
+	if !provisioned {
+		t.Fatal("the fallback must provision the template")
+	}
+}

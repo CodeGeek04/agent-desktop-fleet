@@ -76,6 +76,9 @@ type Manager struct {
 	Settle       time.Duration              // extra wait after the desktop first appears, so windows finish drawing
 	Limits       Limits                     // admission limits for new and waking desktops
 	Host         func() (host.Stats, error) // host probe; nil disables memory checks
+	// PrebuiltImage, when set, returns a local file of the prebuilt desktop image for a new
+	// template, reporting download progress. On error the template is built from Image instead.
+	PrebuiltImage func(ctx context.Context, progress func(string)) (string, error)
 	// PauseUnsupported, when set, explains why desktops cannot be paused on this host. Sleep
 	// then stops desktops instead, and PauseIdle does nothing.
 	PauseUnsupported string
@@ -162,9 +165,18 @@ func (m *Manager) EnsureTemplate(ctx context.Context) error {
 		return err
 	}
 	if t == nil {
-		m.logf(ctx, "creating template %s from %s", TemplateName, m.Image)
+		img := m.Image
+		if m.PrebuiltImage != nil {
+			path, err := m.PrebuiltImage(ctx, func(msg string) { m.logf(ctx, "%s", msg) })
+			if err == nil {
+				img = path
+			} else {
+				m.logf(ctx, "prebuilt desktop image unavailable (%v); building it from %s instead", err, m.Image)
+			}
+		}
+		m.logf(ctx, "creating template %s from %s", TemplateName, img)
 		err := m.RT.Create(ctx, smolvm.CreateOpts{
-			Name: TemplateName, Image: m.Image, CPUs: 2, MemoryMiB: 2048, OverlayGiB: 8, Net: true,
+			Name: TemplateName, Image: img, CPUs: 2, MemoryMiB: 2048, OverlayGiB: 8, Net: true,
 			Labels: map[string]string{LabelRole: RoleTemplate},
 		})
 		if err != nil {
