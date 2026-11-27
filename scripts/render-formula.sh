@@ -41,6 +41,13 @@ class Adf < Formula
       adf runs each desktop in a smolvm microVM. If \`adf doctor\` reports that smolvm is
       missing, install it with:
         curl -sSL https://smolmachines.com/install.sh | bash
+
+      Give your coding agents the adf skill (Claude Code, Codex, Cursor, Gemini CLI,
+      GitHub Copilot, OpenCode and more):
+        adf skill install
+
+      Or, in Claude Code, install the plugin (skill and MCP tools together):
+        /plugin install adf --marketplace CodeGeek04/agent-desktop-fleet
     EOS
   end
 
