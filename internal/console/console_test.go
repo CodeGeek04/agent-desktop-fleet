@@ -361,7 +361,7 @@ func TestPageAssetsAreServed(t *testing.T) {
 	}
 	res := do(t, ts, "GET", "/", "", false)
 	body, _ := io.ReadAll(res.Body)
-	for _, want := range []string{`id="wall"`, `id="focus"`, `id="tile-template"`, `src="app.js"`} {
+	for _, want := range []string{`id="wall"`, `id="focus-view"`, `id="tile-template"`, `src="app.js"`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("page is missing %s", want)
 		}
@@ -436,5 +436,17 @@ func TestStatusIncludesCapacityAndPauseWorks(t *testing.T) {
 	}
 	if rt.Machines["adf-a"].State != "paused" {
 		t.Fatal("desktop was not paused")
+	}
+}
+
+func TestStatusReportsIdlePauseAndPath(t *testing.T) {
+	_, ts := newServer(t, newRuntime(), Options{IdlePause: 10 * time.Minute, AdfPath: "/opt/adf/adf"})
+	var out struct {
+		IdlePauseSeconds int    `json:"idle_pause_seconds"`
+		AdfPath          string `json:"adf_path"`
+	}
+	decode(t, do(t, ts, "GET", "/api/status", "", true), &out)
+	if out.IdlePauseSeconds != 600 || out.AdfPath != "/opt/adf/adf" {
+		t.Fatalf("status = %+v", out)
 	}
 }

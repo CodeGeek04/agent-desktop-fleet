@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -31,7 +32,14 @@ func consoleCommand(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := console.Options{Token: token}
+			idle, err := idleFromEnv()
+			if err != nil {
+				return err
+			}
+			opts := console.Options{Token: token, IdlePause: idle}
+			if exe, err := os.Executable(); err == nil {
+				opts.AdfPath = exe
+			}
 			if log := activityLog(); log != nil {
 				opts.ActivityPath = log.Path
 				opts.Recorder = log
@@ -53,10 +61,6 @@ func consoleCommand(a *app) *cobra.Command {
 
 			ctx := cmd.Context()
 			go srv.RunCollector(ctx)
-			idle, err := idleFromEnv()
-			if err != nil {
-				return err
-			}
 			go runIdlePauser(ctx, a.fleet, opts.ActivityPath, idle)
 			httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 			go func() {
