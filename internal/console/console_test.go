@@ -350,3 +350,20 @@ func TestActivityFeed(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestPageAssetsAreServed(t *testing.T) {
+	_, ts := newServer(t, newRuntime(), Options{})
+	for _, path := range []string{"/style.css", "/app.js", "/fonts/barlow-latin-400-normal.woff2",
+		"/fonts/barlow-semi-condensed-latin-600-normal.woff2", "/fonts/OFL.txt"} {
+		if res := do(t, ts, "GET", path, "", false); res.StatusCode != http.StatusOK {
+			t.Errorf("%s: status %d", path, res.StatusCode)
+		}
+	}
+	res := do(t, ts, "GET", "/", "", false)
+	body, _ := io.ReadAll(res.Body)
+	for _, want := range []string{`id="wall"`, `id="focus"`, `id="tile-template"`, `src="app.js"`} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("page is missing %s", want)
+		}
+	}
+}
