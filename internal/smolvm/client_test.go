@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/runner"
@@ -100,5 +101,42 @@ func TestLifecycleArgs(t *testing.T) {
 				t.Fatalf("got %s %q\nwant smolvm %q", f.Calls[0].Name, f.Calls[0].Args, tc.want)
 			}
 		})
+	}
+}
+
+func TestExecArgsAndOutput(t *testing.T) {
+	f := &runner.Fake{Results: []runner.Result{{Stdout: []byte("hi\n")}}}
+	out, err := New("smolvm", f).Exec(ctx, "adf-a", nil, "echo", "hi")
+	if err != nil || string(out) != "hi\n" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+	want := []string{"machine", "exec", "--error-format", "json", "--name", "adf-a", "--", "echo", "hi"}
+	if !reflect.DeepEqual(f.Calls[0].Args, want) {
+		t.Fatalf("args = %q, want %q", f.Calls[0].Args, want)
+	}
+}
+
+func TestExecWithStdinAddsInteractiveFlag(t *testing.T) {
+	f := &runner.Fake{}
+	if _, err := New("smolvm", f).Exec(ctx, "adf-a", strings.NewReader("data"), "sh", "-c", "cat > /tmp/x"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"machine", "exec", "--error-format", "json", "--name", "adf-a", "-i", "--", "sh", "-c", "cat > /tmp/x"}
+	if !reflect.DeepEqual(f.Calls[0].Args, want) {
+		t.Fatalf("args = %q, want %q", f.Calls[0].Args, want)
+	}
+	if string(f.Calls[0].Stdin) != "data" {
+		t.Fatalf("stdin = %q, want data", f.Calls[0].Stdin)
+	}
+}
+
+func TestVersion(t *testing.T) {
+	f := &runner.Fake{Results: []runner.Result{{Stdout: []byte("smolvm 1.37.7\n")}}}
+	v, err := New("smolvm", f).Version(ctx)
+	if err != nil || v != "smolvm 1.37.7" {
+		t.Fatalf("v=%q err=%v", v, err)
+	}
+	if !reflect.DeepEqual(f.Calls[0].Args, []string{"--version"}) {
+		t.Fatalf("args = %q", f.Calls[0].Args)
 	}
 }

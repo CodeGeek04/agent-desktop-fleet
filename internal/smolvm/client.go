@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/runner"
 )
@@ -133,4 +134,25 @@ func (c *Client) Delete(ctx context.Context, name string, cascade bool) error {
 	}
 	_, err := c.machine(ctx, nil, "delete", args...)
 	return err
+}
+
+// Exec runs argv inside a running machine and returns its stdout. A non-zero exit of the
+// guest command comes back as *runner.ExitError with the guest's stderr.
+func (c *Client) Exec(ctx context.Context, name string, stdin io.Reader, argv ...string) ([]byte, error) {
+	args := []string{"--name", name}
+	if stdin != nil {
+		args = append(args, "-i")
+	}
+	args = append(args, "--")
+	args = append(args, argv...)
+	return c.machine(ctx, stdin, "exec", args...)
+}
+
+// Version returns the output of `smolvm --version`, such as "smolvm 1.37.7".
+func (c *Client) Version(ctx context.Context) (string, error) {
+	out, err := c.Runner.Run(ctx, nil, c.Bin, "--version")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
