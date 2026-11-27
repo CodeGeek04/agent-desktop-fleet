@@ -5,7 +5,7 @@ import _ "embed"
 
 // Version is written to /etc/adf-image-version once a template is provisioned.
 // Bump it whenever desktop-setup.sh or desktop-start.sh changes.
-const Version = "3"
+const Version = "4"
 
 // Display is the X display the desktop runs on.
 const Display = ":1"

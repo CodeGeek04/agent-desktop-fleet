@@ -1,6 +1,7 @@
 package image
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -26,18 +27,31 @@ func TestScriptsMatchConstants(t *testing.T) {
 }
 
 func TestFirefoxStartsClean(t *testing.T) {
-	for _, pref := range []string{
-		`pref("browser.aboutwelcome.enabled", false);`,
-		`pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);`,
-		`pref("browser.sessionstore.resume_from_crash", false);`,
-		`pref("browser.newtabpage.enabled", false);`,
-	} {
-		if !strings.Contains(SetupScript, pref) {
-			t.Errorf("setup script is missing %s", pref)
+	// Debian's firefox-esr reads policies only from its install directory; files in
+	// /etc/firefox-esr/policies or defaults/pref are silently ignored.
+	const marker = "cat > /usr/lib/firefox-esr/distribution/policies.json <<'EOF'\n"
+	i := strings.Index(SetupScript, marker)
+	if i < 0 {
+		t.Fatal("Firefox policies must go to /usr/lib/firefox-esr/distribution/policies.json")
+	}
+	body := SetupScript[i+len(marker):]
+	body = body[:strings.Index(body, "\nEOF\n")]
+	var doc struct {
+		Policies map[string]json.RawMessage `json:"policies"`
+	}
+	if err := json.Unmarshal([]byte(body), &doc); err != nil {
+		t.Fatalf("policies.json is not valid JSON: %v", err)
+	}
+	for _, name := range []string{"NewTabPage", "Homepage", "FirefoxHome", "UserMessaging", "DisableTelemetry", "Preferences"} {
+		if _, ok := doc.Policies[name]; !ok {
+			t.Errorf("policies.json is missing %s", name)
 		}
 	}
-	if !strings.Contains(SetupScript, "/usr/lib/firefox-esr/defaults/pref/adf.js") {
-		t.Error("prefs must go to Firefox's defaults/pref directory")
+	for _, pref := range []string{"browser.aboutwelcome.enabled", "datareporting.policy.dataSubmissionPolicyBypassNotification",
+		"browser.sessionstore.resume_from_crash", "dom.ipc.processPrelaunch.enabled"} {
+		if !strings.Contains(string(doc.Policies["Preferences"]), `"`+pref+`"`) {
+			t.Errorf("policies.json Preferences is missing %s", pref)
+		}
 	}
 	if strings.Contains(StartScript, "pgrep -f") {
 		t.Error("start script must match processes by name (pgrep -x), not by command line")

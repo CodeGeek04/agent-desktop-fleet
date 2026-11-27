@@ -15,34 +15,47 @@ apt-get install -y -qq --no-install-recommends \
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 
-# Firefox policies: no telemetry, studies or default-browser checks.
-mkdir -p /etc/firefox-esr/policies
-cat > /etc/firefox-esr/policies/policies.json <<'EOF'
+# Firefox settings, as an enterprise policy in the install directory: the only place this
+# Debian build reads them from (it ignores /etc/firefox-esr/policies and defaults/pref).
+# A blank start page with no first-run, onboarding, privacy-notice, sponsored or news
+# content, and no bookmarks bar. Firefox also skips its spare pre-launched content process
+# and runs extensions in the main process: the desktop VM already isolates everything, and
+# this saves about 120 MB per desktop with a page open (663 MB to 542 MB, 12 to 7 processes).
+mkdir -p /usr/lib/firefox-esr/distribution
+cat > /usr/lib/firefox-esr/distribution/policies.json <<'EOF'
 {
   "policies": {
     "DisableTelemetry": true,
     "DisableFirefoxStudies": true,
-    "DontCheckDefaultBrowser": true
+    "DontCheckDefaultBrowser": true,
+    "DisablePocket": true,
+    "DisplayBookmarksToolbar": "never",
+    "NoDefaultBookmarks": true,
+    "NewTabPage": false,
+    "Homepage": { "URL": "about:blank", "StartPage": "none", "Locked": true },
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "FirefoxHome": {
+      "Search": false, "TopSites": false, "SponsoredTopSites": false, "Highlights": false,
+      "Pocket": false, "Stories": false, "SponsoredPocket": false, "SponsoredStories": false,
+      "Snippets": false, "Locked": true
+    },
+    "FirefoxSuggest": { "WebSuggestions": false, "SponsoredSuggestions": false, "ImproveSuggest": false, "Locked": true },
+    "UserMessaging": {
+      "ExtensionRecommendations": false, "FeatureRecommendations": false, "UrlbarInterventions": false,
+      "SkipOnboarding": true, "MoreFromMozilla": false, "Locked": true
+    },
+    "Preferences": {
+      "browser.aboutwelcome.enabled": { "Value": false, "Status": "default" },
+      "browser.startup.homepage_override.mstone": { "Value": "ignore", "Status": "default" },
+      "browser.sessionstore.resume_from_crash": { "Value": false, "Status": "default" },
+      "browser.shell.checkDefaultBrowser": { "Value": false, "Status": "default" },
+      "datareporting.policy.dataSubmissionPolicyBypassNotification": { "Value": true, "Status": "default" },
+      "datareporting.policy.firstRunURL": { "Value": "", "Status": "default" },
+      "dom.ipc.processPrelaunch.enabled": { "Value": false, "Status": "default" },
+      "extensions.webextensions.remote": { "Value": false, "Status": "default" }
+    }
   }
 }
-EOF
-
-# Firefox default prefs: a blank window with no first-run, onboarding, privacy-notice
-# or session-restore tabs. Policies alone do not suppress these on Firefox 153 ESR.
-cat > /usr/lib/firefox-esr/defaults/pref/adf.js <<'EOF'
-pref("browser.aboutwelcome.enabled", false);
-pref("trailhead.firstrun.didSeeAboutWelcome", true);
-pref("browser.startup.homepage_override.mstone", "ignore");
-pref("startup.homepage_welcome_url", "");
-pref("startup.homepage_welcome_url.additional", "");
-pref("startup.homepage_override_url", "");
-pref("datareporting.policy.firstRunURL", "");
-pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
-pref("toolkit.telemetry.reportingpolicy.firstRun", false);
-pref("browser.shell.checkDefaultBrowser", false);
-pref("browser.sessionstore.resume_from_crash", false);
-pref("browser.startup.page", 0);
-pref("browser.newtabpage.enabled", false);
-pref("browser.toolbars.bookmarks.visibility", "never");
 EOF
 echo "desktop packages installed"
