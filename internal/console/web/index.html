@@ -5,58 +5,145 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>adf console</title>
 <link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='14' height='9' rx='1.5' fill='%2335302b'/%3E%3Crect x='3' y='13' width='4' height='2' fill='%23e8c070'/%3E%3C/svg%3E">
 </head>
 <body>
 <header class="bar">
-  <a class="brand" href="#/">adf</a>
-  <p class="template"><span class="lamp" id="template-lamp" data-state="off"></span><span id="template-text">Checking the desktop template</span></p>
+  <a class="brand" href="#/" aria-label="adf: all desktops">adf</a>
+
+  <section class="room" aria-label="Room on this computer">
+    <div class="room-meter" id="room-meter" role="meter" aria-label="Memory in use" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <span class="room-used" id="room-used"></span>
+      <span class="room-reserve" id="room-reserve" title="Kept free for the computer itself"></span>
+    </div>
+    <p class="room-text">
+      <span id="room-free">Checking memory</span>
+      <span id="room-fit" class="room-fit"></span>
+    </p>
+  </section>
+
+  <ul class="counts" id="counts" aria-label="Desktops by state"></ul>
+
   <form class="create" id="create-form">
-    <label for="create-name" class="visually-hidden">New desktop name</label>
-    <input id="create-name" name="name" placeholder="agent-1" required autocomplete="off" spellcheck="false"
+    <label for="create-name" class="visually-hidden">Name for the new desktop (optional)</label>
+    <input id="create-name" placeholder="Name (optional)" autocomplete="off" spellcheck="false"
       pattern="[a-z0-9]([a-z0-9\-]{0,38}[a-z0-9])?" title="1 to 40 lowercase letters, digits or dashes">
-    <button type="submit">New desktop</button>
+    <button type="submit" class="btn primary" id="create-btn">New desktop</button>
   </form>
 </header>
+
 <main>
-  <section id="wall" class="wall" aria-label="All desktops"></section>
-  <section id="empty" class="empty" hidden>
-    <h1>No desktops yet</h1>
-    <p>Create one with the field above, or let an agent call <code>create_desktop</code>.</p>
+  <section id="wall-view" aria-label="All desktops">
+    <div class="toolbar" id="toolbar" hidden>
+      <div class="seg" role="radiogroup" aria-label="Show desktops" id="filters">
+        <button type="button" role="radio" data-filter="all" aria-checked="true">All<span class="n" data-count="all"></span></button>
+        <button type="button" role="radio" data-filter="active" aria-checked="false">Agent active<span class="n" data-count="active"></span></button>
+        <button type="button" role="radio" data-filter="asleep" aria-checked="false">Paused or stopped<span class="n" data-count="asleep"></span></button>
+        <button type="button" role="radio" data-filter="attention" aria-checked="false">Needs attention<span class="n" data-count="attention"></span></button>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Screen size" id="sizes">
+        <button type="button" role="radio" data-size="s" aria-checked="false" aria-label="Small screens">S</button>
+        <button type="button" role="radio" data-size="m" aria-checked="true" aria-label="Medium screens">M</button>
+        <button type="button" role="radio" data-size="l" aria-checked="false" aria-label="Large screens">L</button>
+      </div>
+      <p class="toolbar-note"><span id="template-note"></span><span id="idle-note"></span></p>
+    </div>
+
+    <div id="wall" class="wall" data-size="m"></div>
+
+    <p id="no-match" class="no-match" hidden>No desktops match this filter.</p>
+
+    <section id="empty" class="empty" hidden aria-labelledby="empty-title">
+      <h1 id="empty-title">No desktops yet</h1>
+      <p>Create one with <strong>New desktop</strong>, or connect an agent and let it create its own. For Claude Code:</p>
+      <div class="cmd">
+        <code id="mcp-cmd">claude mcp add adf -- adf mcp</code>
+        <button type="button" class="btn" id="copy-cmd">Copy</button>
+      </div>
+      <p class="fine">Any MCP client works: run <code>adf mcp</code> as a stdio server. Agent actions show up here as they happen.</p>
+    </section>
   </section>
-  <section id="focus" class="focus" hidden>
+
+  <section id="focus-view" class="focus" hidden aria-labelledby="focus-name">
     <div class="focus-bar">
       <a href="#/" class="back">All desktops</a>
-      <span class="lamp" id="focus-lamp" data-state="off"></span>
       <h1 id="focus-name"></h1>
-      <span id="focus-mode" class="mode">Watching</span>
-      <span id="focus-metrics" class="metrics"></span>
-      <button id="control-btn" type="button" aria-pressed="false">Take control</button>
-      <button id="delete-btn" type="button" class="danger">Delete</button>
-    </div>
-    <div class="focus-body">
-      <div class="monitor big" id="focus-monitor">
-        <img id="focus-screen" alt="" draggable="false">
+      <span class="state"><span class="lamp" id="focus-lamp" data-state="off"></span><span id="focus-state-text"></span></span>
+      <span class="metrics" id="focus-metrics"></span>
+      <div class="actions">
+        <button type="button" class="btn" id="control-btn" aria-pressed="false">Take control</button>
+        <button type="button" class="btn" id="sleep-btn">Pause</button>
+        <button type="button" class="btn" id="save-btn">Save screenshot</button>
+        <button type="button" class="btn danger" id="delete-btn">Delete</button>
       </div>
+    </div>
+
+    <div class="focus-body">
+      <div class="stage">
+        <div class="monitor big" id="focus-monitor" data-tally="">
+          <img id="focus-screen" alt="" draggable="false">
+          <div class="overlay" id="focus-overlay" hidden></div>
+        </div>
+        <div class="control-bar" id="control-bar" hidden>
+          <p class="control-hint">Your mouse and keys go to this desktop while the screen has focus. Click outside it to stop typing. Some browser shortcuts, such as closing the tab, cannot be captured.</p>
+          <div class="quick-keys" role="group" aria-label="Send a key">
+            <button type="button" class="btn small" data-key='{"key":"Escape"}'>Esc</button>
+            <button type="button" class="btn small" data-key='{"key":"Tab"}'>Tab</button>
+            <button type="button" class="btn small" data-key='{"key":"Enter"}'>Enter</button>
+            <button type="button" class="btn small" data-key='{"key":"l","ctrl":true}'>Ctrl+L</button>
+            <button type="button" class="btn small" data-key='{"key":"t","ctrl":true}'>Ctrl+T</button>
+            <button type="button" class="btn small" data-key='{"key":"w","ctrl":true}'>Ctrl+W</button>
+            <button type="button" class="btn small" data-key='{"key":"a","ctrl":true}'>Ctrl+A</button>
+            <button type="button" class="btn small" data-key='{"key":"F5"}'>F5</button>
+          </div>
+          <form class="send-text" id="send-form">
+            <label for="send-text" class="visually-hidden">Text to type into the desktop</label>
+            <input id="send-text" placeholder="Type or paste text to send" autocomplete="off" spellcheck="false">
+            <button type="submit" class="btn">Send</button>
+          </form>
+        </div>
+        <p class="stage-meta" id="stage-meta"></p>
+      </div>
+
       <aside class="feed" aria-labelledby="feed-title">
-        <h2 id="feed-title">Activity</h2>
+        <div class="feed-head">
+          <h2 id="feed-title">Activity</h2>
+          <div class="seg small" role="radiogroup" aria-label="Show activity from" id="feed-filters">
+            <button type="button" role="radio" data-feed="all" aria-checked="true">All</button>
+            <button type="button" role="radio" data-feed="agent" aria-checked="false">Agent</button>
+            <button type="button" role="radio" data-feed="console" aria-checked="false">You</button>
+          </div>
+        </div>
         <ol id="feed"></ol>
       </aside>
     </div>
-    <p class="hint" id="control-hint" hidden>Your mouse and keyboard go to this desktop. Some browser shortcuts, such as closing the tab, cannot be captured.</p>
   </section>
-  <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
 </main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
 <template id="tile-template">
-  <a class="tile">
-    <div class="monitor"><img alt="" draggable="false"></div>
+  <article class="tile" data-state="" data-tally="">
+    <a class="screen-link">
+      <div class="monitor">
+        <img alt="" draggable="false">
+        <div class="overlay" hidden></div>
+      </div>
+    </a>
     <div class="umd">
       <span class="lamp" data-state="off"></span>
-      <span class="name"></span>
+      <a class="name"></a>
+      <span class="state-text"></span>
       <span class="metrics"></span>
     </div>
+    <div class="tile-actions">
+      <button type="button" class="btn small" data-act="sleep">Pause</button>
+      <button type="button" class="btn small danger" data-act="delete">Delete</button>
+    </div>
     <p class="last"></p>
-  </a>
+  </article>
 </template>
+
 <script src="app.js"></script>
 </body>
 </html>

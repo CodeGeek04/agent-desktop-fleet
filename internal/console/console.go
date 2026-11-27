@@ -31,6 +31,8 @@ type Options struct {
 	FrameMaxAge  time.Duration     // reuse a captured frame for this long (default 100 ms)
 	JPEGQuality  int               // default 60
 	StatsEvery   time.Duration     // metrics refresh period (default 3 s)
+	IdlePause    time.Duration     // shown to people: idle desktops pause after this (0 means off)
+	AdfPath      string            // shown in the empty state, for the MCP setup command
 }
 
 // Server is the console backend.
@@ -193,7 +195,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"template": state, "capacity": capacity})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"template":           state,
+		"capacity":           capacity,
+		"idle_pause_seconds": int(s.opts.IdlePause.Seconds()),
+		"adf_path":           s.opts.AdfPath,
+	})
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
