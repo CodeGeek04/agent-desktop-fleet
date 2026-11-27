@@ -89,7 +89,7 @@ func (t *tools) addActions(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "scroll", Description: "Scroll with the mouse wheel at a point. " + screen,
 		Annotations: act}, recorded(t, "scroll", func(in scrollIn) string { return in.Desktop }, scrollDetail, t.scroll))
 	mcp.AddTool(s, &mcp.Tool{Name: "type_text", Description: "Type text into the focused window, as keyboard input. " +
-		"Click a field first to focus it. Use press_key for Enter, Tab and shortcuts.", Annotations: act}, recorded(t, "type_text", func(in typeIn) string { return in.Desktop }, typeDetail, t.typeText))
+		"Click a field first to focus it. A newline (\\n) presses Enter. Use press_key for Tab and shortcuts.", Annotations: act}, recorded(t, "type_text", func(in typeIn) string { return in.Desktop }, typeDetail, t.typeText))
 	mcp.AddTool(s, &mcp.Tool{Name: "press_key", Description: "Press a key or shortcut, such as Return, Tab, Escape, ctrl+l " +
 		"(focus the address bar), ctrl+t (new tab) or ctrl+w (close tab).", Annotations: act}, recorded(t, "press_key", func(in keyIn) string { return in.Desktop }, func(in keyIn) string { return in.Keys }, t.pressKey))
 	mcp.AddTool(s, &mcp.Tool{Name: "cursor_position", Description: "Return the pointer position in pixels.",

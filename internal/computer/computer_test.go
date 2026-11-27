@@ -170,3 +170,19 @@ func TestScreenshotJPEGRejectsBadQualityAndOutput(t *testing.T) {
 		t.Fatal("expected an error for non-JPEG output")
 	}
 }
+
+func TestTypeTurnsNewlinesIntoReturn(t *testing.T) {
+	r := &recorder{}
+	if err := New(r.exec, screen).Type(ctx, "example.com\nhello\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		xdo("type", "--delay", "12", "--", "example.com"),
+		xdo("key", "Return"),
+		xdo("type", "--delay", "12", "--", "hello"),
+		xdo("key", "Return"),
+	}
+	if !reflect.DeepEqual(r.argv, want) {
+		t.Fatalf("argv = %q\nwant   %q", r.argv, want)
+	}
+}
