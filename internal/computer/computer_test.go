@@ -1,7 +1,9 @@
 package computer
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -91,5 +93,56 @@ func TestInvalidInputIsRejectedBeforeExec(t *testing.T) {
 				t.Fatalf("command ran despite invalid input: %q", r.argv)
 			}
 		})
+	}
+}
+
+func TestScreenshotReturnsPNG(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), []byte("rest")...)
+	r := &recorder{out: png}
+	got, err := New(r.exec, screen).Screenshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, png) {
+		t.Fatalf("got %q", got)
+	}
+	argv := r.argv[0]
+	if !reflect.DeepEqual(argv[:4], []string{"env", "DISPLAY=:1", "sh", "-c"}) {
+		t.Fatalf("argv prefix = %q", argv[:4])
+	}
+	if argv[4] != screenshotScript {
+		t.Fatalf("script = %q", argv[4])
+	}
+}
+
+func TestScreenshotRejectsNonPNG(t *testing.T) {
+	r := &recorder{out: []byte("not an image")}
+	if _, err := New(r.exec, screen).Screenshot(ctx); err == nil {
+		t.Fatal("expected an error for non-PNG output")
+	}
+}
+
+func TestScreenshotWrapsExecError(t *testing.T) {
+	r := &recorder{err: errors.New("exec failed")}
+	if _, err := New(r.exec, screen).Screenshot(ctx); err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestCursorPosition(t *testing.T) {
+	r := &recorder{out: []byte("X=50\nY=60\nSCREEN=0\nWINDOW=4194884\n")}
+	x, y, err := New(r.exec, screen).CursorPosition(ctx)
+	if err != nil || x != 50 || y != 60 {
+		t.Fatalf("x=%d y=%d err=%v", x, y, err)
+	}
+	if !reflect.DeepEqual(r.argv[0], xdo("getmouselocation", "--shell")) {
+		t.Fatalf("argv = %q", r.argv[0])
+	}
+}
+
+func TestCursorPositionBadOutput(t *testing.T) {
+	r := &recorder{out: []byte("garbage")}
+	if _, _, err := New(r.exec, screen).CursorPosition(ctx); err == nil {
+		t.Fatal("expected an error")
 	}
 }

@@ -2,6 +2,7 @@
 package computer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -171,4 +172,55 @@ func (c *Computer) Key(ctx context.Context, combo string) error {
 	}
 	_, err := c.xdotool(ctx, append([]string{"key", "--"}, keys...)...)
 	return err
+}
+
+var pngMagic = []byte("\x89PNG\r\n\x1a\n")
+
+// screenshotScript captures the screen to a unique temp file, prints it, and cleans up.
+// It contains no caller input.
+const screenshotScript = `f=$(mktemp /tmp/adf-shot-XXXXXX) || exit 1
+scrot -o -z "$f.png" && cat "$f.png"
+rc=$?
+rm -f "$f" "$f.png"
+exit $rc`
+
+// Screenshot returns the whole screen as PNG bytes.
+func (c *Computer) Screenshot(ctx context.Context) ([]byte, error) {
+	out, err := c.exec(ctx, nil, "env", "DISPLAY="+c.screen.Display, "sh", "-c", screenshotScript)
+	if err != nil {
+		return nil, fmt.Errorf("screenshot: %w", err)
+	}
+	if !bytes.HasPrefix(out, pngMagic) {
+		return nil, fmt.Errorf("screenshot: output is not a PNG (%d bytes)", len(out))
+	}
+	return out, nil
+}
+
+// CursorPosition returns the pointer position.
+func (c *Computer) CursorPosition(ctx context.Context) (int, int, error) {
+	out, err := c.xdotool(ctx, "getmouselocation", "--shell")
+	if err != nil {
+		return 0, 0, err
+	}
+	x, y := -1, -1
+	for _, line := range strings.Split(string(out), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		switch k {
+		case "X":
+			x = n
+		case "Y":
+			y = n
+		}
+	}
+	if x < 0 || y < 0 {
+		return 0, 0, fmt.Errorf("unexpected xdotool output: %q", out)
+	}
+	return x, y, nil
 }
