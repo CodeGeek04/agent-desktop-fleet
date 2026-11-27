@@ -67,6 +67,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(lifecycleCommands(a)...)
 	root.AddCommand(actionCommands(a)...)
 	root.AddCommand(mcpCommand(a))
+	root.AddCommand(consoleCommand(a))
 	return root
 }
 
