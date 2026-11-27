@@ -76,6 +76,17 @@ Agent actions from every `adf mcp` process (for example, each Claude Code sessio
 they happen. The page is served on 127.0.0.1 only, and the link it prints carries a one-time
 token.
 
+## Demo
+
+```sh
+scripts/demo.sh            # 4 Claude Code agents work in parallel while the console shows them
+scripts/demo.sh --agents 5 --keep
+```
+
+Each agent gets its own desktop and a task (Hacker News, Wikipedia, a web form, GitHub
+trending, OpenStreetMap). In a test run all four finished correctly in 17 to 31 s, for about
+$0.54 in total with Sonnet. Needs the Claude Code CLI.
+
 ## Room and limits
 
 `adf status` shows free memory, desktops by state, the limits and how many more desktops fit.
