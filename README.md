@@ -57,4 +57,4 @@ The first `create_desktop` on a machine builds the desktop template (one to two 
 - `research_notes/`: raw notes behind the report
 - `spike/`: runtime evaluation (smolvm vs microsandbox) with scripts and results
 
-License: Apache-2.0 (to be added with the first code).
+License: Apache-2.0 (see `LICENSE`).
