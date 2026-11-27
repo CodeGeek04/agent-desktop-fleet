@@ -4,3 +4,5 @@
 .env.*
 *.pem
 *.key
+bin/
+/adf
