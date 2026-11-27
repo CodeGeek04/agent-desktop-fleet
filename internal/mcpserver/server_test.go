@@ -168,4 +168,102 @@ func TestToolsAreListedWithDescriptions(t *testing.T) {
 }
 
 // wantTools grows as tools are added in later tasks.
-var wantTools = []string{"list_desktops", "create_desktop", "delete_desktop"}
+var wantTools = []string{"list_desktops", "create_desktop", "delete_desktop", "screenshot", "click",
+	"move_mouse", "drag", "scroll", "type_text", "press_key", "cursor_position"}
+
+func desktopRuntime() *fleettest.Fake {
+	rt := newTestRuntime()
+	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "running", Labels: map[string]string{fleet.LabelRole: fleet.RoleDesktop}}
+	return rt
+}
+
+func TestActionsRunXdotoolAndReturnScreenshots(t *testing.T) {
+	cases := []struct {
+		tool string
+		args map[string]any
+		want string // expected exec call
+	}{
+		{"click", map[string]any{"desktop": "a", "x": 10, "y": 20}, "exec adf-a env DISPLAY=:1 xdotool mousemove 10 20 click 1"},
+		{"click", map[string]any{"desktop": "a", "x": 10, "y": 20, "button": "right", "double": true},
+			"exec adf-a env DISPLAY=:1 xdotool mousemove 10 20 click --repeat 2 --delay 80 3"},
+		{"move_mouse", map[string]any{"desktop": "a", "x": 5, "y": 6}, "exec adf-a env DISPLAY=:1 xdotool mousemove 5 6"},
+		{"drag", map[string]any{"desktop": "a", "from_x": 1, "from_y": 2, "to_x": 30, "to_y": 40},
+			"exec adf-a env DISPLAY=:1 xdotool mousemove 1 2 mousedown 1 mousemove 30 40 mouseup 1"},
+		{"scroll", map[string]any{"desktop": "a", "x": 100, "y": 200}, "exec adf-a env DISPLAY=:1 xdotool mousemove 100 200 click --repeat 3 5"},
+		{"scroll", map[string]any{"desktop": "a", "x": 100, "y": 200, "direction": "up", "amount": 2},
+			"exec adf-a env DISPLAY=:1 xdotool mousemove 100 200 click --repeat 2 4"},
+		{"type_text", map[string]any{"desktop": "a", "text": "hello"}, "exec adf-a env DISPLAY=:1 xdotool type --delay 12 -- hello"},
+		{"press_key", map[string]any{"desktop": "a", "keys": "ctrl+l"}, "exec adf-a env DISPLAY=:1 xdotool key -- ctrl+l"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.tool, func(t *testing.T) {
+			rt := desktopRuntime()
+			res := call(t, connect(t, rt), tc.tool, tc.args)
+			if res.IsError {
+				t.Fatal(text(res))
+			}
+			calls := rt.Calls()
+			if calls[0] != tc.want {
+				t.Fatalf("first call = %q\nwant         %q", calls[0], tc.want)
+			}
+			if imgs := images(res); len(imgs) != 1 {
+				t.Fatalf("want a follow-up screenshot, got %d images", len(imgs))
+			}
+		})
+	}
+}
+
+func TestActionWithoutScreenshot(t *testing.T) {
+	rt := desktopRuntime()
+	res := call(t, connect(t, rt), "click", map[string]any{"desktop": "a", "x": 1, "y": 1, "screenshot": false})
+	if res.IsError || len(images(res)) != 0 || len(rt.Calls()) != 1 {
+		t.Fatalf("isError=%v images=%d calls=%q", res.IsError, len(images(res)), rt.Calls())
+	}
+}
+
+func TestScreenshotTool(t *testing.T) {
+	res := call(t, connect(t, desktopRuntime()), "screenshot", map[string]any{"desktop": "a"})
+	if res.IsError {
+		t.Fatal(text(res))
+	}
+	if imgs := images(res); len(imgs) != 1 || !bytes.Equal(imgs[0], testPNG) {
+		t.Fatal("expected the screenshot bytes")
+	}
+}
+
+func TestScreenshotWaitOutOfRange(t *testing.T) {
+	res := call(t, connect(t, desktopRuntime()), "screenshot", map[string]any{"desktop": "a", "wait_seconds": 31})
+	if !res.IsError {
+		t.Fatal("expected a tool error for wait_seconds above 30")
+	}
+}
+
+func TestOutOfScreenClickIsToolErrorWithoutExec(t *testing.T) {
+	rt := desktopRuntime()
+	res := call(t, connect(t, rt), "click", map[string]any{"desktop": "a", "x": 5000, "y": 1})
+	if !res.IsError || len(rt.Calls()) != 0 {
+		t.Fatalf("isError=%v calls=%q", res.IsError, rt.Calls())
+	}
+}
+
+func TestCursorPosition(t *testing.T) {
+	rt := desktopRuntime()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		return []byte("X=7\nY=9\nSCREEN=0\nWINDOW=1\n"), nil
+	}
+	res := call(t, connect(t, rt), "cursor_position", map[string]any{"desktop": "a"})
+	if res.IsError || !strings.Contains(text(res), `"x":7`) || !strings.Contains(text(res), `"y":9`) {
+		t.Fatalf("result = %s", text(res))
+	}
+}
+
+func TestUnknownDesktopExplainsWhatToDo(t *testing.T) {
+	rt := newTestRuntime()
+	rt.ExecFunc = func(_, _ string, argv []string) ([]byte, error) {
+		return nil, &smolvm.Error{Code: "NOT_FOUND", Message: "vm not found: adf-zzz"}
+	}
+	res := call(t, connect(t, rt), "screenshot", map[string]any{"desktop": "zzz"})
+	if !res.IsError || !strings.Contains(text(res), "create_desktop") {
+		t.Fatalf("result = %s", text(res))
+	}
+}
