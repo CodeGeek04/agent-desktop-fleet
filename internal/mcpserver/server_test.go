@@ -97,6 +97,15 @@ func images(res *mcp.CallToolResult) [][]byte {
 	return out
 }
 
+func TestInstructionsGuideAgents(t *testing.T) {
+	got := connect(t, newTestRuntime()).InitializeResult().Instructions
+	for _, want := range []string{"fleet_status", "subagents in parallel", "adf console", "delete the desktops you created", "did not create"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("instructions do not mention %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestListDesktops(t *testing.T) {
 	rt := newTestRuntime()
 	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "running", Labels: map[string]string{fleet.LabelRole: fleet.RoleDesktop}}

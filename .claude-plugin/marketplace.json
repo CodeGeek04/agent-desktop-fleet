@@ -1,0 +1,16 @@
+{
+  "name": "adf",
+  "owner": {
+    "name": "CodeGeek04"
+  },
+  "metadata": {
+    "description": "adf: a fleet of lightweight sandboxed Linux desktops for AI agents"
+  },
+  "plugins": [
+    {
+      "name": "adf",
+      "description": "Sandboxed Linux desktops for computer use: the adf MCP tools plus a skill for running many desktops in parallel within your computer's limits, handing control to a human, and cleaning up.",
+      "source": "./plugin"
+    }
+  ]
+}

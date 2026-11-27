@@ -43,6 +43,23 @@ adf rm a b
 
 ## Use with Claude Code, Cursor and other MCP clients
 
+**Claude Code plugin (recommended).** It adds the MCP server plus a skill that teaches Claude to
+split a task across desktops, stay within your computer's limits, run one subagent per desktop
+in parallel, hand you control for logins or payments, and delete its desktops afterwards. In
+Claude Code, run:
+
+```
+/plugin install adf --marketplace CodeGeek04/agent-desktop-fleet
+```
+
+Then ask in plain words, for example: "Use adf desktops to compare a long weekend in Seattle, San
+Diego or Las Vegas: flights, hotels and things to do." The plugin starts `adf mcp`, so `adf` must
+be on your PATH. If you added the server with `claude mcp add` before, remove that copy with
+`claude mcp remove adf`.
+
+**Just the MCP server.** Any client works, and the server's MCP instructions carry the same
+guidance in short form:
+
 ```sh
 claude mcp add adf -- "$(command -v adf)" mcp
 ```
@@ -142,6 +159,7 @@ Releases: push a `vX.Y.Z` tag to build archives, publish them and update `Formul
 
 - `cmd/adf`, `internal/`: the `adf` CLI, MCP server and web console
 - `install.sh`, `scripts/`, `Formula/`: installer, release build and Homebrew formula
+- `plugin/`, `.claude-plugin/`: the Claude Code plugin (MCP server and the `desktops` skill)
 - `docs/superpowers/plans/`: implementation plans
 - `reports/`, `research_notes/`, `spike/`: research and the runtime evaluation behind the design
 
