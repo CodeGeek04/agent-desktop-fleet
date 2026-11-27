@@ -64,3 +64,41 @@ func TestPlainStderrKeepsExitError(t *testing.T) {
 		t.Fatal("plain stderr must not be treated as not found")
 	}
 }
+
+func TestLifecycleArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(c *Client) error
+		want []string
+	}{
+		{"create", func(c *Client) error {
+			return c.Create(ctx, CreateOpts{Name: "adf-template", Image: "debian:trixie-slim", CPUs: 2, MemoryMiB: 2048,
+				OverlayGiB: 8, Net: true, Labels: map[string]string{"b": "2", "a": "1"}})
+		}, []string{"machine", "create", "--error-format", "json", "--name", "adf-template", "--image", "debian:trixie-slim",
+			"--cpus", "2", "--mem", "2048", "--overlay", "8", "--net", "--label", "a=1", "--label", "b=2"}},
+		{"start", func(c *Client) error { return c.Start(ctx, "n", false) },
+			[]string{"machine", "start", "--error-format", "json", "--name", "n"}},
+		{"start branchable", func(c *Client) error { return c.Start(ctx, "n", true) },
+			[]string{"machine", "start", "--error-format", "json", "--name", "n", "--branchable"}},
+		{"branch", func(c *Client) error {
+			return c.Branch(ctx, BranchOpts{From: "adf-template", Name: "adf-a", Labels: map[string]string{"adf.role": "desktop"}})
+		}, []string{"machine", "branch", "--error-format", "json", "--from", "adf-template", "--name", "adf-a", "--label", "adf.role=desktop"}},
+		{"stop", func(c *Client) error { return c.Stop(ctx, "n") },
+			[]string{"machine", "stop", "--error-format", "json", "--name", "n"}},
+		{"delete", func(c *Client) error { return c.Delete(ctx, "n", false) },
+			[]string{"machine", "delete", "--error-format", "json", "--name", "n", "--force"}},
+		{"delete cascade", func(c *Client) error { return c.Delete(ctx, "n", true) },
+			[]string{"machine", "delete", "--error-format", "json", "--name", "n", "--force", "--cascade"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &runner.Fake{}
+			if err := tc.call(New("smolvm", f)); err != nil {
+				t.Fatal(err)
+			}
+			if f.Calls[0].Name != "smolvm" || !reflect.DeepEqual(f.Calls[0].Args, tc.want) {
+				t.Fatalf("got %s %q\nwant smolvm %q", f.Calls[0].Name, f.Calls[0].Args, tc.want)
+			}
+		})
+	}
+}
