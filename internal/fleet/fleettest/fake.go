@@ -160,3 +160,29 @@ func (f *Fake) Stats(_ context.Context, name string) (smolvm.Stats, error) {
 	}
 	return smolvm.Stats{}, nil
 }
+
+// Pause implements fleet.Runtime.
+func (f *Fake) Pause(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("pause " + name)
+	m, ok := f.Machines[name]
+	if !ok || m.State != "running" {
+		return fmt.Errorf("machine %s is not running", name)
+	}
+	m.State = "paused"
+	return nil
+}
+
+// Resume implements fleet.Runtime.
+func (f *Fake) Resume(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("resume " + name)
+	m, ok := f.Machines[name]
+	if !ok || m.State != "paused" {
+		return fmt.Errorf("machine %s is not paused", name)
+	}
+	m.State = "running"
+	return nil
+}

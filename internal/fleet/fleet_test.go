@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet/fleettest"
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/host"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -396,5 +397,106 @@ func TestProgressReportsTemplateSteps(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("progress %q is missing %q", joined, want)
 		}
+	}
+}
+
+func desktopMachine(name, state string, created time.Time) *smolvm.Machine {
+	return &smolvm.Machine{Name: DesktopPrefix + name, State: state, CreatedAt: created.Unix(),
+		Labels: map[string]string{LabelRole: RoleDesktop}}
+}
+
+func TestCreateRefusedWhenMemoryIsLow(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	m := testManager(rt)
+	m.Host = func() (host.Stats, error) {
+		return host.Stats{TotalMemBytes: 8 << 30, AvailableMemBytes: 2200 << 20}, nil
+	}
+	_, err := m.CreateDesktop(ctx, "a")
+	if !errors.Is(err, ErrNoCapacity) || !strings.Contains(err.Error(), "delete") {
+		t.Fatalf("err = %v, want ErrNoCapacity with advice", err)
+	}
+	for _, c := range rt.Calls() {
+		if strings.HasPrefix(c, "branch") {
+			t.Fatal("a refused desktop must not be branched")
+		}
+	}
+}
+
+func TestCreateRefusedAtMaxRunning(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	m := testManager(rt)
+	m.Limits.MaxRunning = 1
+	if _, err := m.CreateDesktop(ctx, "b"); !errors.Is(err, ErrNoCapacity) {
+		t.Fatalf("err = %v, want ErrNoCapacity", err)
+	}
+}
+
+func TestCapacity(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	rt.Machines["adf-b"] = desktopMachine("b", "running", time.Now())
+	rt.Machines["adf-c"] = desktopMachine("c", "paused", time.Now())
+	rt.Machines["adf-d"] = desktopMachine("d", "stopped", time.Now())
+	m := testManager(rt)
+	m.Host = func() (host.Stats, error) {
+		return host.Stats{TotalMemBytes: 16 << 30, AvailableMemBytes: 5 << 30, CPUs: 8}, nil
+	}
+	c, err := m.Capacity(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// (5 GiB available - 2 GiB reserve) / 512 MiB per desktop = 6
+	if c.Running != 2 || c.Paused != 1 || c.Stopped != 1 || c.MoreThatFit != 6 || !c.HostKnown || c.Host.CPUs != 8 {
+		t.Fatalf("capacity = %+v", c)
+	}
+	m.Limits.MaxRunning = 3
+	if c, _ := m.Capacity(ctx); c.MoreThatFit != 1 {
+		t.Fatalf("with a cap of 3 and 2 running, more that fit = %d, want 1", c.MoreThatFit)
+	}
+}
+
+func TestPausedDesktopWakesOnAction(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = desktopMachine("a", "running", time.Now())
+	m := testManager(rt)
+	if err := m.Pause(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if rt.Machines["adf-a"].State != "paused" {
+		t.Fatal("desktop was not paused")
+	}
+	if err := m.Computer("a").Key(ctx, "Return"); err != nil {
+		t.Fatalf("action on a paused desktop: %v", err)
+	}
+	got := rt.Calls()
+	if got[0] != "pause adf-a" || got[2] != "resume adf-a" || got[len(got)-1] != "exec adf-a env DISPLAY=:1 xdotool key -- Return" {
+		t.Fatalf("calls = %q", got)
+	}
+	for _, c := range got {
+		if c == "exec adf-a desktop-start" {
+			t.Fatal("resuming keeps memory, so the session must not be restarted")
+		}
+	}
+}
+
+func TestPauseIdle(t *testing.T) {
+	now := time.Now()
+	rt := fleettest.New()
+	warmTemplate(rt)
+	rt.Machines["adf-old"] = desktopMachine("old", "running", now.Add(-time.Hour))
+	rt.Machines["adf-busy"] = desktopMachine("busy", "running", now.Add(-time.Hour))
+	rt.Machines["adf-new"] = desktopMachine("new", "running", now.Add(-time.Minute))
+	rt.Machines["adf-zzz"] = desktopMachine("zzz", "paused", now.Add(-time.Hour))
+	lastActive := map[string]time.Time{"busy": now.Add(-2 * time.Minute), "old": now.Add(-30 * time.Minute)}
+	paused, err := testManager(rt).PauseIdle(ctx, lastActive, 10*time.Minute, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(paused, []string{"old"}) {
+		t.Fatalf("paused = %q, want only old", paused)
 	}
 }

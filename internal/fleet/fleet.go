@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/computer"
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/host"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -38,6 +39,8 @@ type Runtime interface {
 	Delete(ctx context.Context, name string, cascade bool) error
 	Exec(ctx context.Context, name string, stdin io.Reader, argv ...string) ([]byte, error)
 	Stats(ctx context.Context, name string) (smolvm.Stats, error)
+	Pause(ctx context.Context, name string) error
+	Resume(ctx context.Context, name string) error
 }
 
 // Errors callers can test with errors.Is.
@@ -45,16 +48,34 @@ var (
 	ErrInvalidName = errors.New("invalid desktop name")
 	ErrNotFound    = errors.New("no desktop named")
 	ErrExists      = errors.New("desktop already exists")
+	ErrNoCapacity  = errors.New("not enough room on this computer")
 )
+
+// Limits keep the host responsive. A desktop is refused when the host would drop below
+// ReserveBytes of available memory after giving the desktop DesktopBytes, or when
+// MaxRunning desktops already run.
+type Limits struct {
+	ReserveBytes int64 `json:"reserve_bytes"`
+	DesktopBytes int64 `json:"desktop_bytes"`
+	MaxRunning   int   `json:"max_running"` // 0 means no fixed cap
+}
+
+// DefaultLimits keeps 2 GiB for the host and budgets 512 MiB per desktop: measured idle
+// desktops use 200 to 450 MB of host memory, and heavy pages can briefly use more.
+func DefaultLimits() Limits {
+	return Limits{ReserveBytes: 2 << 30, DesktopBytes: 512 << 20}
+}
 
 // Manager creates, lists, drives and removes desktops.
 type Manager struct {
 	RT           Runtime
-	Image        string        // OCI image for the template
-	Log          io.Writer     // progress messages; nil for silence
-	ReadyTimeout time.Duration // how long to wait for the template desktop
-	Poll         time.Duration // readiness poll interval
-	Settle       time.Duration // extra wait after the desktop first appears, so windows finish drawing
+	Image        string                     // OCI image for the template
+	Log          io.Writer                  // progress messages; nil for silence
+	ReadyTimeout time.Duration              // how long to wait for the template desktop
+	Poll         time.Duration              // readiness poll interval
+	Settle       time.Duration              // extra wait after the desktop first appears, so windows finish drawing
+	Limits       Limits                     // admission limits for new and waking desktops
+	Host         func() (host.Stats, error) // host probe; nil disables memory checks
 
 	mu sync.Mutex // serializes template operations; tool calls may arrive concurrently
 }
@@ -64,6 +85,7 @@ func NewManager(rt Runtime, log io.Writer) *Manager {
 	return &Manager{
 		RT: rt, Image: DefaultImage, Log: log,
 		ReadyTimeout: 60 * time.Second, Poll: 200 * time.Millisecond, Settle: 2 * time.Second,
+		Limits: DefaultLimits(),
 	}
 }
 
@@ -252,6 +274,9 @@ func (m *Manager) CreateDesktop(ctx context.Context, name string) (Desktop, erro
 	if existing != nil {
 		return Desktop{}, fmt.Errorf("%w: %q", ErrExists, name)
 	}
+	if err := m.checkCapacity(ctx); err != nil {
+		return Desktop{}, err
+	}
 	if err := m.WarmTemplate(ctx); err != nil {
 		return Desktop{}, err
 	}
@@ -304,14 +329,29 @@ func (m *Manager) Stop(ctx context.Context, name string) error {
 	return m.RT.Stop(ctx, mc.Name)
 }
 
-// Start boots a stopped desktop and brings its screen session back. Stopping a desktop
-// keeps its disk (files, browser profile) but not its memory, so the session restarts.
+// Start makes a desktop usable again. A paused desktop resumes exactly where it was. A
+// stopped desktop keeps its disk (files, browser profile) but not its memory, so it boots
+// and its screen session restarts.
 func (m *Manager) Start(ctx context.Context, name string) error {
 	mc, err := m.mustFind(ctx, name)
 	if err != nil {
 		return err
 	}
-	if mc.State != "running" {
+	switch mc.State {
+	case "running":
+	case "paused":
+		if err := m.checkCapacity(ctx); err != nil {
+			return err
+		}
+		m.logf(ctx, "resuming desktop %q", name)
+		if err := m.RT.Resume(ctx, mc.Name); err != nil {
+			return fmt.Errorf("resume %q: %w", name, err)
+		}
+		return m.waitDesktopReady(ctx, mc.Name)
+	default:
+		if err := m.checkCapacity(ctx); err != nil {
+			return err
+		}
 		m.logf(ctx, "starting desktop %q", name)
 		if err := m.RT.Start(ctx, mc.Name, false); err != nil {
 			return fmt.Errorf("start %q: %w", name, err)
@@ -322,6 +362,18 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return fmt.Errorf("start desktop session in %q: %w", name, err)
 	}
 	return m.waitDesktopReady(ctx, mc.Name)
+}
+
+// Pause saves a running desktop's memory to disk and frees it. Any action resumes it.
+func (m *Manager) Pause(ctx context.Context, name string) error {
+	mc, err := m.mustFind(ctx, name)
+	if err != nil {
+		return err
+	}
+	if mc.State != "running" {
+		return nil
+	}
+	return m.RT.Pause(ctx, mc.Name)
 }
 
 // Delete stops a desktop if it runs and removes it.
@@ -349,10 +401,10 @@ func (m *Manager) Computer(name string) *computer.Computer {
 	machine := DesktopPrefix + name
 	exec := func(ctx context.Context, stdin io.Reader, argv ...string) ([]byte, error) {
 		out, err := m.RT.Exec(ctx, machine, stdin, argv...)
-		if err == nil || stdin != nil || !m.isStopped(ctx, machine, err) {
+		if err == nil || stdin != nil || !m.isAsleep(ctx, machine, err) {
 			return out, err
 		}
-		m.logf(ctx, "desktop %q was stopped; starting it", name)
+		m.logf(ctx, "desktop %q is not running; waking it", name)
 		if serr := m.Start(ctx, name); serr != nil {
 			return out, fmt.Errorf("%w (starting the stopped desktop also failed: %v)", err, serr)
 		}
@@ -427,12 +479,139 @@ func parseMeminfo(data []byte) (GuestMemory, error) {
 	return GuestMemory{TotalBytes: total * 1024, UsedBytes: used * 1024}, nil
 }
 
-// isStopped reports whether err came from smolvm and the machine exists but is not running.
-func (m *Manager) isStopped(ctx context.Context, machine string, err error) bool {
+// isAsleep reports whether err came from smolvm and the machine exists but is paused or stopped.
+func (m *Manager) isAsleep(ctx context.Context, machine string, err error) bool {
 	var se *smolvm.Error
 	if !errors.As(err, &se) || smolvm.IsNotFound(err) {
 		return false
 	}
 	mc, ferr := m.find(ctx, machine)
 	return ferr == nil && mc != nil && mc.State != "running"
+}
+
+func isDesktop(mc smolvm.Machine) bool {
+	return mc.Labels[LabelRole] == RoleDesktop && strings.HasPrefix(mc.Name, DesktopPrefix)
+}
+
+// checkCapacity refuses a new or waking desktop that would overload the host.
+func (m *Manager) checkCapacity(ctx context.Context) error {
+	if m.Limits.MaxRunning > 0 {
+		ms, err := m.RT.List(ctx)
+		if err != nil {
+			return err
+		}
+		running := 0
+		for _, mc := range ms {
+			if isDesktop(mc) && mc.State == "running" {
+				running++
+			}
+		}
+		if running >= m.Limits.MaxRunning {
+			return fmt.Errorf("%w: %d desktops are running and the limit is %d; stop, pause or delete one you no longer need, or raise ADF_MAX_DESKTOPS",
+				ErrNoCapacity, running, m.Limits.MaxRunning)
+		}
+	}
+	if m.Host == nil {
+		return nil
+	}
+	hs, err := m.Host()
+	if err != nil {
+		return nil // a failed probe must not block work
+	}
+	if hs.AvailableMemBytes < m.Limits.ReserveBytes+m.Limits.DesktopBytes {
+		return fmt.Errorf("%w: %s of memory is available and %s stays reserved for the computer itself, so another desktop (about %s) would overload it; stop or delete desktops you no longer need (list_desktops shows them)",
+			ErrNoCapacity, HumanBytes(hs.AvailableMemBytes), HumanBytes(m.Limits.ReserveBytes), HumanBytes(m.Limits.DesktopBytes))
+	}
+	return nil
+}
+
+// HumanBytes formats a size such as "1.5 GB" or "512 MB".
+func HumanBytes(b int64) string {
+	if b >= 1<<30 {
+		return fmt.Sprintf("%.1f GB", float64(b)/(1<<30))
+	}
+	return fmt.Sprintf("%d MB", b>>20)
+}
+
+// Capacity is how full the host is and how many more desktops fit.
+type Capacity struct {
+	Host        host.Stats `json:"host"`
+	HostKnown   bool       `json:"host_known"`
+	Limits      Limits     `json:"limits"`
+	Running     int        `json:"running"`
+	Paused      int        `json:"paused"`
+	Stopped     int        `json:"stopped"`
+	MoreThatFit int        `json:"more_that_fit"` // -1 when unknown
+}
+
+// Capacity reports host memory and CPU, desktops by state, and how many more fit now.
+func (m *Manager) Capacity(ctx context.Context) (Capacity, error) {
+	ms, err := m.RT.List(ctx)
+	if err != nil {
+		return Capacity{}, err
+	}
+	c := Capacity{Limits: m.Limits, MoreThatFit: -1}
+	for _, mc := range ms {
+		if !isDesktop(mc) {
+			continue
+		}
+		switch mc.State {
+		case "running":
+			c.Running++
+		case "paused":
+			c.Paused++
+		default:
+			c.Stopped++
+		}
+	}
+	if m.Host != nil {
+		if hs, err := m.Host(); err == nil {
+			c.Host, c.HostKnown = hs, true
+			fit := int64(0)
+			if m.Limits.DesktopBytes > 0 {
+				fit = (hs.AvailableMemBytes - m.Limits.ReserveBytes) / m.Limits.DesktopBytes
+			}
+			c.MoreThatFit = int(max(fit, 0))
+		}
+	}
+	if m.Limits.MaxRunning > 0 {
+		room := max(m.Limits.MaxRunning-c.Running, 0)
+		if c.MoreThatFit < 0 || room < c.MoreThatFit {
+			c.MoreThatFit = room
+		}
+	}
+	return c, nil
+}
+
+// PauseIdle pauses running desktops whose latest action is older than idle. lastActive maps
+// desktop names to their latest action; desktops without one count from their creation.
+func (m *Manager) PauseIdle(ctx context.Context, lastActive map[string]time.Time, idle time.Duration, now time.Time) ([]string, error) {
+	ms, err := m.RT.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var paused []string
+	for _, mc := range ms {
+		if !isDesktop(mc) || mc.State != "running" {
+			continue
+		}
+		name := strings.TrimPrefix(mc.Name, DesktopPrefix)
+		var last time.Time
+		if mc.CreatedAt > 0 {
+			last = time.Unix(mc.CreatedAt, 0)
+		}
+		if t, ok := lastActive[name]; ok && t.After(last) {
+			last = t
+		}
+		if last.IsZero() || now.Sub(last) < idle {
+			continue
+		}
+		m.logf(ctx, "pausing idle desktop %q (no activity for %s)", name, now.Sub(last).Round(time.Minute))
+		if err := m.RT.Pause(ctx, mc.Name); err != nil {
+			m.logf(ctx, "could not pause %q: %v", name, err)
+			continue
+		}
+		paused = append(paused, name)
+	}
+	return paused, nil
 }

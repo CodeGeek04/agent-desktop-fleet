@@ -156,3 +156,23 @@ func TestStats(t *testing.T) {
 		t.Fatalf("args = %q, want %q", f.Calls[0].Args, want)
 	}
 }
+
+func TestPauseAndResumeArgs(t *testing.T) {
+	f := &runner.Fake{}
+	c := New("smolvm", f)
+	if err := c.Pause(ctx, "adf-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Resume(ctx, "adf-a"); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"machine", "pause", "--error-format", "json", "--name", "adf-a"},
+		{"machine", "resume", "--error-format", "json", "--name", "adf-a"},
+	}
+	for i, w := range want {
+		if !reflect.DeepEqual(f.Calls[i].Args, w) {
+			t.Fatalf("call %d = %q, want %q", i, f.Calls[i].Args, w)
+		}
+	}
+}

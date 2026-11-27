@@ -182,3 +182,16 @@ func (c *Client) Stats(ctx context.Context, name string) (Stats, error) {
 	}
 	return s, nil
 }
+
+// Pause saves a running machine's memory and disk, then stops it. Resume continues it
+// exactly where it was. A paused machine uses no memory.
+func (c *Client) Pause(ctx context.Context, name string) error {
+	_, err := c.machine(ctx, nil, "pause", "--name", name)
+	return err
+}
+
+// Resume continues a paused machine.
+func (c *Client) Resume(ctx context.Context, name string) error {
+	_, err := c.machine(ctx, nil, "resume", "--name", name)
+	return err
+}
