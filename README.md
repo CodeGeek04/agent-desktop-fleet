@@ -1,5 +1,12 @@
 # adf: a fleet of desktops for AI agents
 
+
+https://github.com/user-attachments/assets/2ab670bf-780c-468c-a540-9e14d5c19c3b
+
+
+
+
+
 Run many lightweight, sandboxed Linux desktops on your own computer, give any agent the tools to
 use them over MCP, and watch every one of them live. adf is infrastructure only: desktop
 lifecycle, computer-use tools and a console. Bring your own agent.
