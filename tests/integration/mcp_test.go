@@ -34,7 +34,9 @@ func TestMCPOverStdio(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cs.Close()
+	// Close via Cleanup, registered before the delete cleanup below: cleanups run in
+	// reverse order, so the desktop is deleted while the session is still open.
+	t.Cleanup(func() { _ = cs.Close() })
 
 	callTool := func(name string, args map[string]any) *mcp.CallToolResult {
 		t.Helper()
