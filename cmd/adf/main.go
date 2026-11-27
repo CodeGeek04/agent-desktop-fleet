@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet"
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/host"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/runner"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -33,7 +34,12 @@ func (a *app) setup() error {
 	if err != nil {
 		return err
 	}
-	a.fleet = fleet.NewManager(smolvm.New(bin, runner.Exec{}), os.Stderr)
+	m := fleet.NewManager(smolvm.New(bin, runner.Exec{}), os.Stderr)
+	m.Host = host.Read
+	if m.Limits, err = limitsFromEnv(fleet.DefaultLimits()); err != nil {
+		return err
+	}
+	a.fleet = m
 	return nil
 }
 

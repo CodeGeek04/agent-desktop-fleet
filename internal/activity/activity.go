@@ -187,3 +187,15 @@ func parse(data []byte) []Event {
 	}
 	return out
 }
+
+// LastActive returns the time of the newest event for each desktop in the recent part of the log.
+func LastActive(path string) (map[string]time.Time, error) {
+	events, _, err := Recent(path, int(^uint(0)>>1))
+	last := map[string]time.Time{}
+	for _, e := range events {
+		if e.Time.After(last[e.Desktop]) {
+			last[e.Desktop] = e.Time
+		}
+	}
+	return last, err
+}

@@ -53,6 +53,11 @@ func consoleCommand(a *app) *cobra.Command {
 
 			ctx := cmd.Context()
 			go srv.RunCollector(ctx)
+			idle, err := idleFromEnv()
+			if err != nil {
+				return err
+			}
+			go runIdlePauser(ctx, a.fleet, opts.ActivityPath, idle)
 			httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 			go func() {
 				<-ctx.Done()

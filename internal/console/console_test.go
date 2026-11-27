@@ -416,3 +416,25 @@ func TestStopAndStartEndpoints(t *testing.T) {
 		t.Fatalf("start unknown: status = %d", res.StatusCode)
 	}
 }
+
+func TestStatusIncludesCapacityAndPauseWorks(t *testing.T) {
+	rt := newRuntime()
+	_, ts := newServer(t, rt, Options{})
+	var out struct {
+		Template string
+		Capacity struct {
+			Running     int `json:"running"`
+			MoreThatFit int `json:"more_that_fit"`
+		}
+	}
+	decode(t, do(t, ts, "GET", "/api/status", "", true), &out)
+	if out.Template != "running" || out.Capacity.Running != 1 {
+		t.Fatalf("status = %+v", out)
+	}
+	if res := do(t, ts, "POST", "/api/desktops/a/pause", "", true); res.StatusCode != http.StatusNoContent {
+		t.Fatalf("pause: status = %d", res.StatusCode)
+	}
+	if rt.Machines["adf-a"].State != "paused" {
+		t.Fatal("desktop was not paused")
+	}
+}

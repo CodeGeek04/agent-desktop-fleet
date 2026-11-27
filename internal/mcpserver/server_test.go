@@ -181,7 +181,7 @@ func TestToolsAreListedWithDescriptions(t *testing.T) {
 // wantTools grows as tools are added in later tasks.
 var wantTools = []string{"list_desktops", "create_desktop", "delete_desktop", "screenshot", "click",
 	"move_mouse", "drag", "scroll", "type_text", "press_key", "cursor_position", "run_command",
-	"start_desktop", "stop_desktop"}
+	"start_desktop", "pause_desktop", "fleet_status"}
 
 func desktopRuntime() *fleettest.Fake {
 	rt := newTestRuntime()
@@ -393,13 +393,13 @@ func TestListDesktopsIsNotRecorded(t *testing.T) {
 	}
 }
 
-func TestStopAndStartDesktop(t *testing.T) {
+func TestPauseAndStartDesktop(t *testing.T) {
 	rt := desktopRuntime()
 	cs := connect(t, rt)
-	if res := call(t, cs, "stop_desktop", map[string]any{"name": "a"}); res.IsError {
+	if res := call(t, cs, "pause_desktop", map[string]any{"name": "a"}); res.IsError {
 		t.Fatal(text(res))
 	}
-	if rt.Machines["adf-a"].State != "stopped" {
+	if rt.Machines["adf-a"].State != "paused" {
 		t.Fatal("desktop is still running")
 	}
 	res := call(t, cs, "start_desktop", map[string]any{"name": "a"})
@@ -407,7 +407,14 @@ func TestStopAndStartDesktop(t *testing.T) {
 		t.Fatalf("isError=%v images=%d text=%q", res.IsError, len(images(res)), text(res))
 	}
 	if rt.Machines["adf-a"].State != "running" {
-		t.Fatal("desktop did not start")
+		t.Fatal("desktop did not resume")
+	}
+}
+
+func TestFleetStatus(t *testing.T) {
+	res := call(t, connect(t, desktopRuntime()), "fleet_status", map[string]any{})
+	if res.IsError || !strings.Contains(text(res), `"running":1`) || !strings.Contains(text(res), `"more_that_fit"`) {
+		t.Fatalf("result = %s", text(res))
 	}
 }
 

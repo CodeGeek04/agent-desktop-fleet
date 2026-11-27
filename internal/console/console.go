@@ -78,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/desktops/{name}", s.handleDelete)
 	api.HandleFunc("POST /api/desktops/{name}/start", s.handleStart)
 	api.HandleFunc("POST /api/desktops/{name}/stop", s.handleStop)
+	api.HandleFunc("POST /api/desktops/{name}/pause", s.handlePause)
 	api.HandleFunc("GET /api/desktops/{name}/screen", s.handleScreen)
 	api.HandleFunc("POST /api/desktops/{name}/input", s.handleInput)
 	api.HandleFunc("GET /api/activity", s.handleActivity)
@@ -187,7 +188,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"template": state})
+	capacity, err := s.fleet.Capacity(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"template": state, "capacity": capacity})
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
@@ -375,6 +381,19 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	err := s.fleet.Stop(r.Context(), name)
 	s.frames.forget(name)
 	s.record(name, "stop_desktop", "", start, err)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	start := time.Now()
+	err := s.fleet.Pause(r.Context(), name)
+	s.frames.forget(name)
+	s.record(name, "pause_desktop", "", start, err)
 	if err != nil {
 		writeErr(w, err)
 		return

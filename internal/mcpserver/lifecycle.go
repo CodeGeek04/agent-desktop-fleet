@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet"
 )
 
 type desktopInfo struct {
@@ -37,16 +39,23 @@ func (t *tools) addLifecycle(s *mcp.Server) {
 	}, recorded(t, "create_desktop", nameOf, nil, t.createDesktop))
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name: "stop_desktop",
-		Description: "Stop a desktop to free its memory and CPU while keeping its files. " +
-			"Any later action on it, or start_desktop, starts it again in about a second (open windows are not restored).",
+		Name: "pause_desktop",
+		Description: "Pause a desktop to free its memory and CPU. It keeps everything, including open windows, " +
+			"and the next action on it (or start_desktop) resumes it in a few seconds. Idle desktops are paused automatically.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true, OpenWorldHint: ptr(false)},
-	}, recorded(t, "stop_desktop", nameOf, nil, t.stopDesktop))
+	}, recorded(t, "pause_desktop", nameOf, nil, t.pauseDesktop))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "fleet_status",
+		Description: "Show this computer's room for desktops: memory and CPU, desktops running, paused and stopped, " +
+			"the limits, and how many more desktops fit now. Check it before creating several desktops.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)},
+	}, t.fleetStatus)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "start_desktop",
-		Description: "Start a stopped desktop and return a screenshot. Actions on a stopped desktop start it " +
-			"automatically, so this is only needed to warm one up ahead of time.",
+		Description: "Resume a paused desktop or start a stopped one, and return a screenshot. Actions on a " +
+			"paused or stopped desktop wake it automatically, so this is only needed to warm one up ahead of time.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true, OpenWorldHint: ptr(false)},
 	}, recorded(t, "start_desktop", nameOf, nil, t.startDesktop))
 
@@ -90,11 +99,16 @@ func (t *tools) deleteDesktop(ctx context.Context, _ *mcp.CallToolRequest, in na
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("deleted desktop %q", in.Name)}}}, nil, nil
 }
 
-func (t *tools) stopDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
-	if err := t.fleet.Stop(ctx, in.Name); err != nil {
+func (t *tools) pauseDesktop(ctx context.Context, _ *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
+	if err := t.fleet.Pause(ctx, in.Name); err != nil {
 		return nil, nil, err
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("stopped desktop %q", in.Name)}}}, nil, nil
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("paused desktop %q", in.Name)}}}, nil, nil
+}
+
+func (t *tools) fleetStatus(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, fleet.Capacity, error) {
+	c, err := t.fleet.Capacity(ctx)
+	return nil, c, err
 }
 
 func (t *tools) startDesktop(ctx context.Context, req *mcp.CallToolRequest, in nameIn) (*mcp.CallToolResult, any, error) {
