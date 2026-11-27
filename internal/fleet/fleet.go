@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/computer"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/smolvm"
 )
@@ -146,4 +148,157 @@ func (m *Manager) EnsureTemplate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Desktop is one agent desktop.
+type Desktop struct {
+	Name    string // user-facing name, such as "a"
+	Machine string // runtime machine name, such as "adf-a"
+	State   string // runtime state, such as "running" or "stopped"
+}
+
+// WarmTemplate makes sure the template runs as a branch source with its desktop up,
+// so every branch starts with a ready desktop.
+func (m *Manager) WarmTemplate(ctx context.Context) error {
+	t, err := m.find(ctx, TemplateName)
+	if err != nil {
+		return err
+	}
+	if t == nil {
+		return errors.New("no desktop template yet: run 'adf init' first")
+	}
+	if err := m.ensureBranchSource(ctx, t); err != nil {
+		return err
+	}
+	if _, err := m.RT.Exec(ctx, TemplateName, nil, "desktop-start"); err != nil {
+		return fmt.Errorf("start template desktop: %w", err)
+	}
+	return m.waitDesktopReady(ctx, TemplateName)
+}
+
+// waitDesktopReady polls until Firefox has a visible window. If the first poll already
+// succeeds the desktop was warm and no settle time is added.
+func (m *Manager) waitDesktopReady(ctx context.Context, machine string) error {
+	deadline := time.Now().Add(m.ReadyTimeout)
+	for attempt := 1; ; attempt++ {
+		_, err := m.RT.Exec(ctx, machine, nil,
+			"env", "DISPLAY="+image.Display, "xdotool", "search", "--onlyvisible", "--class", "firefox")
+		if err == nil {
+			if attempt == 1 {
+				return nil
+			}
+			return sleepCtx(ctx, m.Settle)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("desktop in %s not ready after %s: %w", machine, m.ReadyTimeout, err)
+		}
+		if err := sleepCtx(ctx, m.Poll); err != nil {
+			return err
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// CreateDesktop branches a new running desktop from the warm template.
+func (m *Manager) CreateDesktop(ctx context.Context, name string) (Desktop, error) {
+	if err := ValidateName(name); err != nil {
+		return Desktop{}, err
+	}
+	machine := DesktopPrefix + name
+	existing, err := m.find(ctx, machine)
+	if err != nil {
+		return Desktop{}, err
+	}
+	if existing != nil {
+		return Desktop{}, fmt.Errorf("desktop %q already exists", name)
+	}
+	if err := m.WarmTemplate(ctx); err != nil {
+		return Desktop{}, err
+	}
+	err = m.RT.Branch(ctx, smolvm.BranchOpts{
+		From: TemplateName, Name: machine, Labels: map[string]string{LabelRole: RoleDesktop},
+	})
+	if err != nil {
+		return Desktop{}, fmt.Errorf("branch desktop %q: %w", name, err)
+	}
+	return Desktop{Name: name, Machine: machine, State: "running"}, nil
+}
+
+// List returns all desktops sorted by name.
+func (m *Manager) List(ctx context.Context) ([]Desktop, error) {
+	ms, err := m.RT.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []Desktop
+	for _, mc := range ms {
+		if mc.Labels[LabelRole] != RoleDesktop || !strings.HasPrefix(mc.Name, DesktopPrefix) {
+			continue
+		}
+		out = append(out, Desktop{Name: strings.TrimPrefix(mc.Name, DesktopPrefix), Machine: mc.Name, State: mc.State})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+func (m *Manager) mustFind(ctx context.Context, name string) (*smolvm.Machine, error) {
+	if err := ValidateName(name); err != nil {
+		return nil, err
+	}
+	mc, err := m.find(ctx, DesktopPrefix+name)
+	if err != nil {
+		return nil, err
+	}
+	if mc == nil {
+		return nil, fmt.Errorf("no desktop named %q", name)
+	}
+	return mc, nil
+}
+
+// Stop stops a desktop.
+func (m *Manager) Stop(ctx context.Context, name string) error {
+	mc, err := m.mustFind(ctx, name)
+	if err != nil {
+		return err
+	}
+	return m.RT.Stop(ctx, mc.Name)
+}
+
+// Delete stops a desktop if it runs and removes it.
+func (m *Manager) Delete(ctx context.Context, name string) error {
+	mc, err := m.mustFind(ctx, name)
+	if err != nil {
+		return err
+	}
+	if mc.State == "running" {
+		if err := m.RT.Stop(ctx, mc.Name); err != nil {
+			return fmt.Errorf("stop %q: %w", name, err)
+		}
+	}
+	return m.RT.Delete(ctx, mc.Name, false)
+}
+
+// Exec runs argv inside a desktop and returns its stdout.
+func (m *Manager) Exec(ctx context.Context, name string, argv ...string) ([]byte, error) {
+	return m.RT.Exec(ctx, DesktopPrefix+name, nil, argv...)
+}
+
+// Computer returns the computer-use actions for a desktop.
+func (m *Manager) Computer(name string) *computer.Computer {
+	machine := DesktopPrefix + name
+	exec := func(ctx context.Context, stdin io.Reader, argv ...string) ([]byte, error) {
+		return m.RT.Exec(ctx, machine, stdin, argv...)
+	}
+	return computer.New(exec, computer.Screen{Display: image.Display, Width: image.Width, Height: image.Height})
 }
