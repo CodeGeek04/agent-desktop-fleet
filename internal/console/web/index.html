@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>adf console</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="#/">adf</a>
+  <p class="template"><span class="lamp" id="template-lamp" data-state="off"></span><span id="template-text">Checking the desktop template</span></p>
+  <form class="create" id="create-form">
+    <label for="create-name" class="visually-hidden">New desktop name</label>
+    <input id="create-name" name="name" placeholder="agent-1" required autocomplete="off" spellcheck="false"
+      pattern="[a-z0-9]([a-z0-9\-]{0,38}[a-z0-9])?" title="1 to 40 lowercase letters, digits or dashes">
+    <button type="submit">New desktop</button>
+  </form>
+</header>
+<main>
+  <section id="wall" class="wall" aria-label="All desktops"></section>
+  <section id="empty" class="empty" hidden>
+    <h1>No desktops yet</h1>
+    <p>Create one with the field above, or let an agent call <code>create_desktop</code>.</p>
+  </section>
+  <section id="focus" class="focus" hidden>
+    <div class="focus-bar">
+      <a href="#/" class="back">All desktops</a>
+      <span class="lamp" id="focus-lamp" data-state="off"></span>
+      <h1 id="focus-name"></h1>
+      <span id="focus-mode" class="mode">Watching</span>
+      <span id="focus-metrics" class="metrics"></span>
+      <button id="control-btn" type="button" aria-pressed="false">Take control</button>
+      <button id="delete-btn" type="button" class="danger">Delete</button>
+    </div>
+    <div class="focus-body">
+      <div class="monitor big" id="focus-monitor">
+        <img id="focus-screen" alt="" draggable="false">
+      </div>
+      <aside class="feed" aria-labelledby="feed-title">
+        <h2 id="feed-title">Activity</h2>
+        <ol id="feed"></ol>
+      </aside>
+    </div>
+    <p class="hint" id="control-hint" hidden>Your mouse and keyboard go to this desktop. Some browser shortcuts, such as closing the tab, cannot be captured.</p>
+  </section>
+  <p id="toast" class="toast" role="status" aria-live="polite" hidden></p>
+</main>
+<template id="tile-template">
+  <a class="tile">
+    <div class="monitor"><img alt="" draggable="false"></div>
+    <div class="umd">
+      <span class="lamp" data-state="off"></span>
+      <span class="name"></span>
+      <span class="metrics"></span>
+    </div>
+    <p class="last"></p>
+  </a>
+</template>
+<script src="app.js"></script>
+</body>
+</html>

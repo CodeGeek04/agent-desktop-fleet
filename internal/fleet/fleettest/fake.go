@@ -23,6 +23,8 @@ type Fake struct {
 	ExecFunc func(name, stdin string, argv []string) ([]byte, error)
 	// StartDelay makes Start take time, like a real boot, so tests can expose races.
 	StartDelay time.Duration
+	// StatsFunc decides each Stats result. Nil returns zero stats.
+	StatsFunc func(name string) (smolvm.Stats, error)
 }
 
 // New returns an empty Fake.
@@ -139,4 +141,16 @@ func (f *Fake) Exec(_ context.Context, name string, stdin io.Reader, argv ...str
 		return fn(name, in, argv)
 	}
 	return nil, nil
+}
+
+// Stats implements fleet.Runtime. Calls are not added to the call log, because metrics
+// collectors poll in the background and would make logs nondeterministic.
+func (f *Fake) Stats(_ context.Context, name string) (smolvm.Stats, error) {
+	f.mu.Lock()
+	fn := f.StatsFunc
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(name)
+	}
+	return smolvm.Stats{}, nil
 }

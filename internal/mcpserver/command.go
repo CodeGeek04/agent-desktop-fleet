@@ -39,7 +39,7 @@ func (t *tools) addCommand(s *mcp.Server) {
 			"stdout and stderr. Use it to install software, inspect files or prepare the desktop; " +
 			"the command runs without a display, so use the action tools to drive windows.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(true), OpenWorldHint: ptr(true)},
-	}, t.runCommand)
+	}, recorded(t, "run_command", func(in commandIn) string { return in.Desktop }, commandDetail, t.runCommand))
 }
 
 func (t *tools) runCommand(ctx context.Context, _ *mcp.CallToolRequest, in commandIn) (*mcp.CallToolResult, commandOut, error) {

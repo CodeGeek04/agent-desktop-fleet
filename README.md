@@ -49,9 +49,21 @@ ADF_MCP_TOKEN=change-me ./bin/adf mcp --http 127.0.0.1:7400   # endpoint: http:/
 
 The first `create_desktop` on a machine builds the desktop template (one to two minutes).
 
+## Watch and take over: the console
+
+```sh
+./bin/adf console
+```
+
+Opens a local page with every desktop live, its CPU and memory, and the latest agent action.
+Click a desktop to watch it closely, follow its activity feed, or press "Take control" to use
+your own mouse and keyboard on it. Agent actions from every `adf mcp` process (for example,
+Claude Code sessions) show up as they happen. The page is served on 127.0.0.1 only, and the
+link it prints contains a one-time token.
+
 ## Repository layout
 
-- `cmd/adf`, `internal/`: the `adf` CLI and MCP server
+- `cmd/adf`, `internal/`: the `adf` CLI, MCP server and web console
 - `docs/superpowers/plans/`: implementation plans
 - `reports/`: market and technical research (November 2026)
 - `research_notes/`: raw notes behind the report

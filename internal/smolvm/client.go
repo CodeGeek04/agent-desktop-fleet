@@ -156,3 +156,29 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// MemoryStats is guest memory as reported by `smolvm machine stats`.
+type MemoryStats struct {
+	TotalBytes     int64 `json:"total_bytes"`
+	UsedBytes      int64 `json:"used_bytes"`
+	AvailableBytes int64 `json:"available_bytes"`
+}
+
+// Stats is a running machine's resource use, as seen inside the guest.
+type Stats struct {
+	CPUPercent float64     `json:"cpu_percent"`
+	Memory     MemoryStats `json:"memory"`
+}
+
+// Stats samples a running machine's CPU and memory. It takes about half a second.
+func (c *Client) Stats(ctx context.Context, name string) (Stats, error) {
+	out, err := c.machine(ctx, nil, "stats", "--name", name, "--json")
+	if err != nil {
+		return Stats{}, err
+	}
+	var s Stats
+	if err := json.Unmarshal(out, &s); err != nil {
+		return Stats{}, fmt.Errorf("parse smolvm machine stats: %w", err)
+	}
+	return s, nil
+}

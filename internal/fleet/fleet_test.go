@@ -260,3 +260,78 @@ func TestConcurrentCreatesStartTemplateOnce(t *testing.T) {
 		t.Fatalf("template started %d times, want 1", starts)
 	}
 }
+
+func TestStatsPassesThroughWithValidation(t *testing.T) {
+	rt := fleettest.New()
+	rt.StatsFunc = func(name string) (smolvm.Stats, error) {
+		if name != "adf-a" {
+			t.Errorf("stats asked for %q", name)
+		}
+		return smolvm.Stats{CPUPercent: 5}, nil
+	}
+	m := testManager(rt)
+	s, err := m.Stats(ctx, "a")
+	if err != nil || s.CPUPercent != 5 {
+		t.Fatalf("stats=%+v err=%v", s, err)
+	}
+	if _, err := m.Stats(ctx, "Bad"); !errors.Is(err, ErrInvalidName) {
+		t.Fatalf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestTemplateState(t *testing.T) {
+	rt := fleettest.New()
+	m := testManager(rt)
+	if s, err := m.TemplateState(ctx); err != nil || s != "missing" {
+		t.Fatalf("state=%q err=%v", s, err)
+	}
+	warmTemplate(rt)
+	if s, _ := m.TemplateState(ctx); s != "running" {
+		t.Fatalf("state = %q", s)
+	}
+}
+
+func TestErrorsAreTyped(t *testing.T) {
+	rt := fleettest.New()
+	warmTemplate(rt)
+	m := testManager(rt)
+	if err := ValidateName("Bad"); !errors.Is(err, ErrInvalidName) {
+		t.Errorf("ValidateName: %v", err)
+	}
+	if err := m.Delete(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete: %v", err)
+	}
+	if _, err := m.CreateDesktop(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CreateDesktop(ctx, "a"); !errors.Is(err, ErrExists) {
+		t.Errorf("duplicate CreateDesktop: %v", err)
+	}
+}
+
+func TestMemoryExcludesBalloon(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(name, _ string, argv []string) ([]byte, error) {
+		if name != "adf-a" || strings.Join(argv, " ") != "cat /proc/meminfo" {
+			t.Errorf("unexpected exec %s %q", name, argv)
+		}
+		return []byte("MemTotal:        2037920 kB\nMemFree:           12236 kB\nMemAvailable:      10240 kB\n" +
+			"AnonPages:        299368 kB\nBalloon:         1637048 kB\n"), nil
+	}
+	mem, err := testManager(rt).Memory(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantUsed := int64(2037920-10240-1637048) * 1024
+	if mem.TotalBytes != 2037920*1024 || mem.UsedBytes != wantUsed {
+		t.Fatalf("mem = %+v, want used %d", mem, wantUsed)
+	}
+}
+
+func TestMemoryRejectsGarbage(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, _ []string) ([]byte, error) { return []byte("nonsense"), nil }
+	if _, err := testManager(rt).Memory(ctx, "a"); err == nil {
+		t.Fatal("expected an error for output without MemTotal and MemAvailable")
+	}
+}

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/CodeGeek04/agent-desktop-fleet/internal/activity"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/fleet/fleettest"
 	"github.com/CodeGeek04/agent-desktop-fleet/internal/image"
@@ -40,10 +42,16 @@ func newTestRuntime() *fleettest.Fake {
 // connect starts the MCP server on rt and returns a connected client session.
 func connect(t *testing.T, rt *fleettest.Fake) *mcp.ClientSession {
 	t.Helper()
+	return connectWith(t, rt, Options{Version: "test"})
+}
+
+// connectWith starts the MCP server on rt with opts and returns a connected client session.
+func connectWith(t *testing.T, rt *fleettest.Fake, opts Options) *mcp.ClientSession {
+	t.Helper()
 	ctx := context.Background()
 	m := fleet.NewManager(rt, nil)
 	m.Settle = 0
-	server := New(m, Options{Version: "test"})
+	server := New(m, opts)
 	st, ct := mcp.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, st, nil)
 	if err != nil {
@@ -320,5 +328,65 @@ func TestRunCommandOtherErrorsAreToolErrors(t *testing.T) {
 	res := call(t, connect(t, rt), "run_command", map[string]any{"desktop": "a", "command": "true"})
 	if !res.IsError {
 		t.Fatal("expected a tool error")
+	}
+}
+
+type memRecorder struct {
+	mu     sync.Mutex
+	events []activity.Event
+}
+
+func (m *memRecorder) Record(e activity.Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, e)
+}
+
+func (m *memRecorder) all() []activity.Event {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]activity.Event(nil), m.events...)
+}
+
+func TestToolCallsAreRecorded(t *testing.T) {
+	rec := &memRecorder{}
+	cs := connectWith(t, desktopRuntime(), Options{Version: "test", Activity: rec})
+	if res := call(t, cs, "click", map[string]any{"desktop": "a", "x": 10, "y": 20, "screenshot": false}); res.IsError {
+		t.Fatal(text(res))
+	}
+	ev := rec.all()
+	if len(ev) != 1 {
+		t.Fatalf("events = %+v", ev)
+	}
+	e := ev[0]
+	if e.Desktop != "a" || e.Source != activity.SourceAgent || e.Action != "click" || !e.OK || e.Detail != "(10, 20)" || e.Time.IsZero() {
+		t.Fatalf("event = %+v", e)
+	}
+}
+
+func TestFailedToolCallIsRecordedAsError(t *testing.T) {
+	rec := &memRecorder{}
+	cs := connectWith(t, desktopRuntime(), Options{Version: "test", Activity: rec})
+	call(t, cs, "click", map[string]any{"desktop": "a", "x": 5000, "y": 1})
+	if ev := rec.all(); len(ev) != 1 || ev[0].OK || ev[0].Error == "" {
+		t.Fatalf("events = %+v", ev)
+	}
+}
+
+func TestTypedTextIsNotRecorded(t *testing.T) {
+	rec := &memRecorder{}
+	cs := connectWith(t, desktopRuntime(), Options{Version: "test", Activity: rec})
+	call(t, cs, "type_text", map[string]any{"desktop": "a", "text": "hunter2", "screenshot": false})
+	if ev := rec.all(); len(ev) != 1 || ev[0].Detail != "7 characters" {
+		t.Fatalf("events = %+v", ev)
+	}
+}
+
+func TestListDesktopsIsNotRecorded(t *testing.T) {
+	rec := &memRecorder{}
+	cs := connectWith(t, desktopRuntime(), Options{Version: "test", Activity: rec})
+	call(t, cs, "list_desktops", map[string]any{})
+	if ev := rec.all(); len(ev) != 0 {
+		t.Fatalf("events = %+v", ev)
 	}
 }

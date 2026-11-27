@@ -1,4 +1,4 @@
-package main
+package httpauth
 
 import (
 	"net/http"
@@ -8,7 +8,7 @@ import (
 
 func TestRequireToken(t *testing.T) {
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
-	h := requireToken("s3cret", ok)
+	h := RequireToken("s3cret", ok)
 	cases := map[string]int{
 		"":                  http.StatusUnauthorized,
 		"Bearer wrong":      http.StatusUnauthorized,
@@ -31,11 +31,11 @@ func TestRequireToken(t *testing.T) {
 }
 
 func TestNewTokenIsRandomHex(t *testing.T) {
-	a, err := newToken()
+	a, err := NewToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := newToken()
+	b, _ := NewToken()
 	if len(a) != 64 || a == b {
 		t.Fatalf("tokens %q and %q", a, b)
 	}

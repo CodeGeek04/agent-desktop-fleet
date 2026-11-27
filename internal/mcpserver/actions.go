@@ -79,19 +79,19 @@ func (t *tools) addActions(s *mcp.Server) {
 	act := &mcp.ToolAnnotations{DestructiveHint: ptr(false), OpenWorldHint: ptr(true)}
 
 	mcp.AddTool(s, &mcp.Tool{Name: "screenshot", Description: "Capture the desktop screen as a PNG. " + screen,
-		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)}}, t.screenshot)
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)}}, recorded(t, "screenshot", func(in screenshotIn) string { return in.Desktop }, screenshotDetail, t.screenshot))
 	mcp.AddTool(s, &mcp.Tool{Name: "click", Description: "Move the pointer to a point and click. " + screen +
-		"Returns a screenshot afterwards unless screenshot is false.", Annotations: act}, t.click)
+		"Returns a screenshot afterwards unless screenshot is false.", Annotations: act}, recorded(t, "click", func(in clickIn) string { return in.Desktop }, clickDetail, t.click))
 	mcp.AddTool(s, &mcp.Tool{Name: "move_mouse", Description: "Move the pointer without clicking, for hover menus. " + screen,
-		Annotations: act}, t.moveMouse)
+		Annotations: act}, recorded(t, "move_mouse", func(in pointIn) string { return in.Desktop }, func(in pointIn) string { return point(in.X, in.Y) }, t.moveMouse))
 	mcp.AddTool(s, &mcp.Tool{Name: "drag", Description: "Press the left button at one point, move to another and release. " + screen,
-		Annotations: act}, t.drag)
+		Annotations: act}, recorded(t, "drag", func(in dragIn) string { return in.Desktop }, dragDetail, t.drag))
 	mcp.AddTool(s, &mcp.Tool{Name: "scroll", Description: "Scroll with the mouse wheel at a point. " + screen,
-		Annotations: act}, t.scroll)
+		Annotations: act}, recorded(t, "scroll", func(in scrollIn) string { return in.Desktop }, scrollDetail, t.scroll))
 	mcp.AddTool(s, &mcp.Tool{Name: "type_text", Description: "Type text into the focused window, as keyboard input. " +
-		"Click a field first to focus it. Use press_key for Enter, Tab and shortcuts.", Annotations: act}, t.typeText)
+		"Click a field first to focus it. Use press_key for Enter, Tab and shortcuts.", Annotations: act}, recorded(t, "type_text", func(in typeIn) string { return in.Desktop }, typeDetail, t.typeText))
 	mcp.AddTool(s, &mcp.Tool{Name: "press_key", Description: "Press a key or shortcut, such as Return, Tab, Escape, ctrl+l " +
-		"(focus the address bar), ctrl+t (new tab) or ctrl+w (close tab).", Annotations: act}, t.pressKey)
+		"(focus the address bar), ctrl+t (new tab) or ctrl+w (close tab).", Annotations: act}, recorded(t, "press_key", func(in keyIn) string { return in.Desktop }, func(in keyIn) string { return in.Keys }, t.pressKey))
 	mcp.AddTool(s, &mcp.Tool{Name: "cursor_position", Description: "Return the pointer position in pixels.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)}}, t.cursorPosition)
 }
@@ -141,14 +141,7 @@ func (t *tools) drag(ctx context.Context, _ *mcp.CallToolRequest, in dragIn) (*m
 }
 
 func (t *tools) scroll(ctx context.Context, _ *mcp.CallToolRequest, in scrollIn) (*mcp.CallToolResult, any, error) {
-	dir := computer.Direction(in.Direction)
-	if dir == "" {
-		dir = computer.ScrollDown
-	}
-	amount := in.Amount
-	if amount == 0 {
-		amount = 3
-	}
+	dir, amount := scrollDefaults(in)
 	note := fmt.Sprintf("scrolled %s %d at (%d, %d)", dir, amount, in.X, in.Y)
 	return t.act(ctx, in.Desktop, in.Screenshot, note, func(c *computer.Computer) error {
 		return c.Scroll(ctx, in.X, in.Y, dir, amount)
@@ -177,4 +170,17 @@ func (t *tools) cursorPosition(ctx context.Context, _ *mcp.CallToolRequest, in d
 		return nil, cursorOut{}, explain(in.Desktop, err)
 	}
 	return nil, cursorOut{X: x, Y: y}, nil
+}
+
+// scrollDefaults applies the documented defaults: down, 3 wheel clicks.
+func scrollDefaults(in scrollIn) (computer.Direction, int) {
+	dir := computer.Direction(in.Direction)
+	if dir == "" {
+		dir = computer.ScrollDown
+	}
+	amount := in.Amount
+	if amount == 0 {
+		amount = 3
+	}
+	return dir, amount
 }
