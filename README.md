@@ -79,13 +79,20 @@ token.
 ## Demo
 
 ```sh
-scripts/demo.sh            # 4 Claude Code agents work in parallel while the console shows them
-scripts/demo.sh --agents 5 --keep
+scripts/demo.sh     # needs the Claude Code CLI; about $1 with Sonnet
 ```
 
-Each agent gets its own desktop and a task (Hacker News, Wikipedia, a web form, GitHub
-trending, OpenStreetMap). In a test run all four finished correctly in 17 to 31 s, for about
-$0.54 in total with Sonnet. Needs the Claude Code CLI.
+Four Claude Code agents work at once, each on its own desktop, while the console shows them:
+
+- `qa-problem` and `qa-error` test a demo shop ([saucedemo.com](https://www.saucedemo.com), made
+  for test automation) under two test accounts and report the bugs they find.
+- `office` looks up data on Wikipedia, then builds a table with a `SUM` formula and a chart in
+  LibreOffice Calc, a native Linux app the script installs first.
+- `shop` buys a backpack but stops at the final button. Take control of it in the console and
+  press Finish yourself; the agent notices and confirms the order.
+
+In a test run they found 5 and 6 real bugs, built the spreadsheet, and confirmed the human's
+order, in 42 to 83 s each, for $0.97 in total.
 
 ## Room and limits
 
