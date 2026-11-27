@@ -367,3 +367,32 @@ func TestPageAssetsAreServed(t *testing.T) {
 		}
 	}
 }
+
+func TestStatsUseGuestMemoryWithoutBalloon(t *testing.T) {
+	rt := newRuntime()
+	rt.StatsFunc = func(string) (smolvm.Stats, error) {
+		// smolvm counts ballooned pages as used.
+		return smolvm.Stats{CPUPercent: 1, Memory: smolvm.MemoryStats{UsedBytes: 1900 << 20, TotalBytes: 2000 << 20}}, nil
+	}
+	base := rt.ExecFunc
+	rt.ExecFunc = func(name, stdin string, argv []string) ([]byte, error) {
+		if strings.Join(argv, " ") == "cat /proc/meminfo" {
+			return []byte("MemTotal: 2048000 kB\nMemAvailable: 10000 kB\nBalloon: 1638000 kB\n"), nil
+		}
+		return base(name, stdin, argv)
+	}
+	s, ts := newServer(t, rt, Options{})
+	s.refreshStats(context.Background())
+	var out struct {
+		Desktops []struct {
+			Stats *struct {
+				MemUsedBytes int64 `json:"mem_used_bytes"`
+			}
+		}
+	}
+	decode(t, do(t, ts, "GET", "/api/desktops", "", true), &out)
+	want := int64(2048000-10000-1638000) * 1024
+	if len(out.Desktops) != 1 || out.Desktops[0].Stats == nil || out.Desktops[0].Stats.MemUsedBytes != want {
+		t.Fatalf("desktops = %+v, want used %d", out.Desktops, want)
+	}
+}

@@ -24,6 +24,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Author display rules (grid, flex) would otherwise override the hidden attribute. */
+[hidden] { display: none !important; }
 body { margin: 0; min-height: 100vh; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
@@ -60,8 +62,9 @@ button[aria-pressed="true"] { background: var(--red); color: #fff; }
 .monitor.stale img { opacity: 0.35; }
 .tile:hover .monitor { border-color: var(--muted); }
 .umd { display: flex; align-items: center; gap: 8px; padding: 8px 2px 0; font-family: var(--label); font-weight: 500; }
-.umd .name { font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.metrics { margin-left: auto; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.umd .name { flex: 0 0 auto; max-width: 55%; font-weight: 600; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metrics { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metrics.hot { color: var(--amber); }
 .last { margin: 2px 2px 0; min-height: 1.45em; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .empty { padding: 96px 24px; text-align: center; }
@@ -97,7 +100,7 @@ button[aria-pressed="true"] { background: var(--red); color: #fff; }
 @media (max-width: 900px) {
   .bar { flex-wrap: wrap; gap: 10px 16px; padding: 10px 16px; }
   .create { margin-left: 0; width: 100%; }
-  .create input { flex: 1; }
+  .create input { flex: 1; min-width: 0; width: auto; }
   .wall { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); padding: 16px; }
   .focus { padding: 12px 16px 16px; }
   .focus-body { grid-template-columns: 1fr; }

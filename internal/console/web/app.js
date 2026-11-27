@@ -59,6 +59,12 @@ function metricsText(d) {
   return `${Math.round(d.stats.cpu_percent)}% CPU, ${fmtMem(d.stats.mem_used_bytes)} of ${fmtMem(d.stats.mem_total_bytes)}`;
 }
 
+// A desktop near its memory limit is worth noticing: heavy pages can push 2 GB guests there.
+function isHot(d) {
+  return Boolean(d && d.state === "running" && d.stats && d.stats.mem_total_bytes &&
+    d.stats.mem_used_bytes / d.stats.mem_total_bytes > 0.9);
+}
+
 function ago(ms) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
   if (s < 5) return "just now";
@@ -82,7 +88,8 @@ function lampState(d) {
   const e = state.lastEvent.get(d.name);
   const age = e ? Date.now() - Date.parse(e.time) : Infinity;
   if (e && !e.ok && age < 10000) return "error";
-  if (e && e.source === "agent" && age < 3000) return "agent";
+  // Agents act every few seconds (model latency), so keep the lamp lit between actions.
+  if (e && e.source === "agent" && age < 6000) return "agent";
   return "ready";
 }
 
@@ -170,7 +177,9 @@ function renderWall() {
       observer.observe(el);
     }
     tile.el.querySelector(".lamp").dataset.state = lampState(d);
-    tile.el.querySelector(".metrics").textContent = metricsText(d);
+    const metrics = tile.el.querySelector(".metrics");
+    metrics.textContent = metricsText(d);
+    metrics.classList.toggle("hot", isHot(d));
     const e = state.lastEvent.get(d.name);
     tile.el.querySelector(".last").textContent = e
       ? `${who(e)}: ${describe(e)}, ${ago(Date.parse(e.time))}`
@@ -199,6 +208,7 @@ function renderFocusHeader() {
   const lamp = lampState(d);
   $("focus-lamp").dataset.state = lamp;
   $("focus-metrics").textContent = d ? metricsText(d) : "This desktop no longer exists";
+  $("focus-metrics").classList.toggle("hot", isHot(d));
   $("focus-mode").textContent = state.control ? "You have control" : lamp === "agent" ? "Agent is acting" : "Watching";
 }
 

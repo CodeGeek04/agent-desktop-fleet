@@ -127,8 +127,13 @@ func (s *Server) refreshStats(ctx context.Context) {
 			if err != nil {
 				return
 			}
+			ds := desktopStats{CPUPercent: st.CPUPercent, MemUsedBytes: st.Memory.UsedBytes, MemTotalBytes: st.Memory.TotalBytes}
+			// smolvm counts ballooned memory as used; the guest's own figures leave it out.
+			if mem, err := s.fleet.Memory(ctx, name); err == nil {
+				ds.MemUsedBytes, ds.MemTotalBytes = mem.UsedBytes, mem.TotalBytes
+			}
 			mu.Lock()
-			fresh[name] = desktopStats{CPUPercent: st.CPUPercent, MemUsedBytes: st.Memory.UsedBytes, MemTotalBytes: st.Memory.TotalBytes}
+			fresh[name] = ds
 			mu.Unlock()
 		}(d.Name)
 	}

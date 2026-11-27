@@ -8,6 +8,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -337,4 +338,50 @@ func (m *Manager) TemplateState(ctx context.Context) (string, error) {
 		return "missing", nil
 	}
 	return t.State, nil
+}
+
+// GuestMemory is memory inside a desktop. UsedBytes leaves out pages the host has taken back
+// through the balloon: smolvm memory is elastic, and the guest counts ballooned pages as used.
+type GuestMemory struct {
+	TotalBytes int64
+	UsedBytes  int64
+}
+
+// Memory reads a running desktop's memory use from /proc/meminfo.
+func (m *Manager) Memory(ctx context.Context, name string) (GuestMemory, error) {
+	if err := ValidateName(name); err != nil {
+		return GuestMemory{}, err
+	}
+	out, err := m.RT.Exec(ctx, DesktopPrefix+name, nil, "cat", "/proc/meminfo")
+	if err != nil {
+		return GuestMemory{}, err
+	}
+	return parseMeminfo(out)
+}
+
+func parseMeminfo(data []byte) (GuestMemory, error) {
+	kib := map[string]int64{}
+	for _, line := range strings.Split(string(data), "\n") {
+		key, rest, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			continue
+		}
+		if n, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
+			kib[key] = n
+		}
+	}
+	total, okTotal := kib["MemTotal"]
+	avail, okAvail := kib["MemAvailable"]
+	if !okTotal || !okAvail {
+		return GuestMemory{}, errors.New("meminfo: missing MemTotal or MemAvailable")
+	}
+	used := total - avail - kib["Balloon"]
+	if used < 0 {
+		used = 0
+	}
+	return GuestMemory{TotalBytes: total * 1024, UsedBytes: used * 1024}, nil
 }

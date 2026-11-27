@@ -308,3 +308,30 @@ func TestErrorsAreTyped(t *testing.T) {
 		t.Errorf("duplicate CreateDesktop: %v", err)
 	}
 }
+
+func TestMemoryExcludesBalloon(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(name, _ string, argv []string) ([]byte, error) {
+		if name != "adf-a" || strings.Join(argv, " ") != "cat /proc/meminfo" {
+			t.Errorf("unexpected exec %s %q", name, argv)
+		}
+		return []byte("MemTotal:        2037920 kB\nMemFree:           12236 kB\nMemAvailable:      10240 kB\n" +
+			"AnonPages:        299368 kB\nBalloon:         1637048 kB\n"), nil
+	}
+	mem, err := testManager(rt).Memory(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantUsed := int64(2037920-10240-1637048) * 1024
+	if mem.TotalBytes != 2037920*1024 || mem.UsedBytes != wantUsed {
+		t.Fatalf("mem = %+v, want used %d", mem, wantUsed)
+	}
+}
+
+func TestMemoryRejectsGarbage(t *testing.T) {
+	rt := fleettest.New()
+	rt.ExecFunc = func(_, _ string, _ []string) ([]byte, error) { return []byte("nonsense"), nil }
+	if _, err := testManager(rt).Memory(ctx, "a"); err == nil {
+		t.Fatal("expected an error for output without MemTotal and MemAvailable")
+	}
+}
