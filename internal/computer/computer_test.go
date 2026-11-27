@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -86,8 +87,8 @@ func TestInvalidInputIsRejectedBeforeExec(t *testing.T) {
 	for name, do := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := &recorder{}
-			if err := do(New(r.exec, screen)); err == nil {
-				t.Fatal("expected an error")
+			if err := do(New(r.exec, screen)); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("err = %v, want ErrInvalid", err)
 			}
 			if len(r.argv) != 0 {
 				t.Fatalf("command ran despite invalid input: %q", r.argv)
@@ -144,5 +145,28 @@ func TestCursorPositionBadOutput(t *testing.T) {
 	r := &recorder{out: []byte("garbage")}
 	if _, _, err := New(r.exec, screen).CursorPosition(ctx); err == nil {
 		t.Fatal("expected an error")
+	}
+}
+
+func TestScreenshotJPEG(t *testing.T) {
+	jpg := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, []byte("rest")...)
+	r := &recorder{out: jpg}
+	got, err := New(r.exec, screen).ScreenshotJPEG(ctx, 60)
+	if err != nil || !bytes.Equal(got, jpg) {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+	if !strings.Contains(r.argv[0][4], `scrot -o -z -q 60 "$f.jpg"`) {
+		t.Fatalf("script = %q", r.argv[0][4])
+	}
+}
+
+func TestScreenshotJPEGRejectsBadQualityAndOutput(t *testing.T) {
+	r := &recorder{out: []byte("not a jpeg")}
+	c := New(r.exec, screen)
+	if _, err := c.ScreenshotJPEG(ctx, 0); !errors.Is(err, ErrInvalid) || len(r.argv) != 0 {
+		t.Fatalf("quality 0: err=%v calls=%d", err, len(r.argv))
+	}
+	if _, err := c.ScreenshotJPEG(ctx, 60); err == nil {
+		t.Fatal("expected an error for non-JPEG output")
 	}
 }

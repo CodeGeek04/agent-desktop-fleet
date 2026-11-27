@@ -46,6 +46,9 @@ const (
 // MaxScroll is the largest number of wheel clicks in one Scroll call.
 const MaxScroll = 50
 
+// ErrInvalid marks errors caused by bad input, raised before anything runs in the desktop.
+var ErrInvalid = errors.New("invalid input")
+
 // Computer performs actions on one desktop.
 type Computer struct {
 	exec   Execer
@@ -62,7 +65,7 @@ func (c *Computer) xdotool(ctx context.Context, args ...string) ([]byte, error) 
 
 func (c *Computer) checkPoint(x, y int) error {
 	if x < 0 || y < 0 || x >= c.screen.Width || y >= c.screen.Height {
-		return fmt.Errorf("point (%d, %d) is outside the %dx%d screen", x, y, c.screen.Width, c.screen.Height)
+		return fmt.Errorf("%w: point (%d, %d) is outside the %dx%d screen", ErrInvalid, x, y, c.screen.Width, c.screen.Height)
 	}
 	return nil
 }
@@ -76,7 +79,7 @@ func buttonNumber(b Button) (string, error) {
 	case Right:
 		return "3", nil
 	}
-	return "", fmt.Errorf("unknown mouse button %q (want left, middle or right)", b)
+	return "", fmt.Errorf("%w: unknown mouse button %q (want left, middle or right)", ErrInvalid, b)
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
@@ -135,12 +138,12 @@ func (c *Computer) Scroll(ctx context.Context, x, y int, dir Direction, amount i
 		return err
 	}
 	if amount < 1 || amount > MaxScroll {
-		return fmt.Errorf("scroll amount %d out of range 1 to %d", amount, MaxScroll)
+		return fmt.Errorf("%w: scroll amount %d out of range 1 to %d", ErrInvalid, amount, MaxScroll)
 	}
 	buttons := map[Direction]string{ScrollUp: "4", ScrollDown: "5", ScrollLeft: "6", ScrollRight: "7"}
 	b, ok := buttons[dir]
 	if !ok {
-		return fmt.Errorf("unknown scroll direction %q (want up, down, left or right)", dir)
+		return fmt.Errorf("%w: unknown scroll direction %q (want up, down, left or right)", ErrInvalid, dir)
 	}
 	_, err := c.xdotool(ctx, "mousemove", itoa(x), itoa(y), "click", "--repeat", itoa(amount), b)
 	return err
@@ -163,11 +166,11 @@ var keyRE = regexp.MustCompile(`^[A-Za-z0-9_]+(\+[A-Za-z0-9_]+)*$`)
 func (c *Computer) Key(ctx context.Context, combo string) error {
 	keys := strings.Fields(combo)
 	if len(keys) == 0 {
-		return errors.New("no key given")
+		return fmt.Errorf("%w: no key given", ErrInvalid)
 	}
 	for _, k := range keys {
 		if !keyRE.MatchString(k) {
-			return fmt.Errorf("invalid key %q", k)
+			return fmt.Errorf("%w: key %q", ErrInvalid, k)
 		}
 	}
 	_, err := c.xdotool(ctx, append([]string{"key", "--"}, keys...)...)
@@ -176,13 +179,20 @@ func (c *Computer) Key(ctx context.Context, combo string) error {
 
 var pngMagic = []byte("\x89PNG\r\n\x1a\n")
 
-// screenshotScript captures the screen to a unique temp file, prints it, and cleans up.
-// It contains no caller input.
-const screenshotScript = `f=$(mktemp /tmp/adf-shot-XXXXXX) || exit 1
-scrot -o -z "$f.png" && cat "$f.png"
+// captureScript captures the screen to a unique temp file, prints it, and cleans up.
+// ext and opts are fixed by this package, never caller input; opts ends with a space when set.
+func captureScript(ext, opts string) string {
+	return `f=$(mktemp /tmp/adf-shot-XXXXXX) || exit 1
+scrot -o -z ` + opts + `"$f.` + ext + `" && cat "$f.` + ext + `"
 rc=$?
-rm -f "$f" "$f.png"
+rm -f "$f" "$f.` + ext + `"
 exit $rc`
+}
+
+// screenshotScript captures a PNG.
+var screenshotScript = captureScript("png", "")
+
+var jpegMagic = []byte{0xFF, 0xD8, 0xFF}
 
 // Screenshot returns the whole screen as PNG bytes.
 func (c *Computer) Screenshot(ctx context.Context) ([]byte, error) {
@@ -223,4 +233,21 @@ func (c *Computer) CursorPosition(ctx context.Context) (int, int, error) {
 		return 0, 0, fmt.Errorf("unexpected xdotool output: %q", out)
 	}
 	return x, y, nil
+}
+
+// ScreenshotJPEG returns the whole screen as JPEG bytes at quality 1 to 100.
+// It is smaller and faster than Screenshot, which suits live views.
+func (c *Computer) ScreenshotJPEG(ctx context.Context, quality int) ([]byte, error) {
+	if quality < 1 || quality > 100 {
+		return nil, fmt.Errorf("%w: jpeg quality %d out of range 1 to 100", ErrInvalid, quality)
+	}
+	script := captureScript("jpg", "-q "+itoa(quality)+" ")
+	out, err := c.exec(ctx, nil, "env", "DISPLAY="+c.screen.Display, "sh", "-c", script)
+	if err != nil {
+		return nil, fmt.Errorf("screenshot: %w", err)
+	}
+	if !bytes.HasPrefix(out, jpegMagic) {
+		return nil, fmt.Errorf("screenshot: output is not a JPEG (%d bytes)", len(out))
+	}
+	return out, nil
 }
