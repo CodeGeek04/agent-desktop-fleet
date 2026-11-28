@@ -18,6 +18,7 @@ import (
 const (
 	SourceAgent   = "agent"   // an MCP tool call
 	SourceConsole = "console" // a person using the web console
+	SourceCua     = "cua"     // a Cua SDK client through adf cua-server
 )
 
 // Event is one action on one desktop.
