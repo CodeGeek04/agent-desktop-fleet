@@ -2,24 +2,24 @@
 class Adf < Formula
   desc "Fleet of lightweight sandboxed Linux desktops for AI agents"
   homepage "https://github.com/CodeGeek04/agent-desktop-fleet"
-  version "0.1.1"
+  version "0.1.2"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.1/adf_0.1.1_darwin_arm64.tar.gz"
-      sha256 "20a9ed63800bcb726e356493a1751fd1732a390c69a65d5c1385974a26b3724e"
+      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.2/adf_0.1.2_darwin_arm64.tar.gz"
+      sha256 "ad9b6e4c747a63521abab9bece4ea91ef06861ebfc66d2e8a347cfaeea6eeaa7"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.1/adf_0.1.1_linux_amd64.tar.gz"
-      sha256 "5c3dc3914c22870223d25069d8933f6c964cd97c645df64e1e8fc2abe2ac89e5"
+      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.2/adf_0.1.2_linux_amd64.tar.gz"
+      sha256 "34f33121f028c593377ff55deba918d7e1ba658134052cb12aa2cd014f3b2ade"
     end
     on_arm do
-      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.1/adf_0.1.1_linux_arm64.tar.gz"
-      sha256 "b23c27abaab6f7401b4b78bde6c4ff783565358c96ddf73a0a092d4ab03c571d"
+      url "https://github.com/CodeGeek04/agent-desktop-fleet/releases/download/v0.1.2/adf_0.1.2_linux_arm64.tar.gz"
+      sha256 "1cbf606dd101d0daab8be16ac9ae85c1a36bb3da862c31d195d10abed00acf1e"
     end
   end
 
