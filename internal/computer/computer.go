@@ -84,6 +84,23 @@ func buttonNumber(b Button) (string, error) {
 
 func itoa(i int) string { return strconv.Itoa(i) }
 
+// Point is a position on the screen in pixels, from the top-left corner.
+type Point struct{ X, Y int }
+
+// MaxPath is the most points a DragPath call accepts, which keeps the xdotool command line short.
+const MaxPath = 1000
+
+// moveTo returns the xdotool arguments that move the pointer to at, or none when at is nil.
+func (c *Computer) moveTo(at *Point) ([]string, error) {
+	if at == nil {
+		return nil, nil
+	}
+	if err := c.checkPoint(at.X, at.Y); err != nil {
+		return nil, err
+	}
+	return []string{"mousemove", itoa(at.X), itoa(at.Y)}, nil
+}
+
 // Move moves the pointer.
 func (c *Computer) Move(ctx context.Context, x, y int) error {
 	if err := c.checkPoint(x, y); err != nil {
@@ -95,46 +112,111 @@ func (c *Computer) Move(ctx context.Context, x, y int) error {
 
 // Click moves the pointer and clicks once.
 func (c *Computer) Click(ctx context.Context, x, y int, b Button) error {
-	if err := c.checkPoint(x, y); err != nil {
-		return err
-	}
-	n, err := buttonNumber(b)
-	if err != nil {
-		return err
-	}
-	_, err = c.xdotool(ctx, "mousemove", itoa(x), itoa(y), "click", n)
-	return err
+	return c.ClickAt(ctx, &Point{x, y}, b, 1)
 }
 
 // DoubleClick moves the pointer and clicks twice.
 func (c *Computer) DoubleClick(ctx context.Context, x, y int, b Button) error {
-	if err := c.checkPoint(x, y); err != nil {
+	return c.ClickAt(ctx, &Point{x, y}, b, 2)
+}
+
+// ClickAt clicks times (1 to 3) at at, or where the pointer already is when at is nil.
+func (c *Computer) ClickAt(ctx context.Context, at *Point, b Button, times int) error {
+	args, err := c.moveTo(at)
+	if err != nil {
 		return err
 	}
 	n, err := buttonNumber(b)
 	if err != nil {
 		return err
 	}
-	_, err = c.xdotool(ctx, "mousemove", itoa(x), itoa(y), "click", "--repeat", "2", "--delay", "80", n)
+	switch {
+	case times == 1:
+		args = append(args, "click", n)
+	case times == 2 || times == 3:
+		args = append(args, "click", "--repeat", itoa(times), "--delay", "80", n)
+	default:
+		return fmt.Errorf("%w: %d clicks (want 1 to 3)", ErrInvalid, times)
+	}
+	_, err = c.xdotool(ctx, args...)
+	return err
+}
+
+// MouseDown presses and holds a button, after moving the pointer to at unless at is nil.
+func (c *Computer) MouseDown(ctx context.Context, at *Point, b Button) error {
+	return c.buttonEvent(ctx, "mousedown", at, b)
+}
+
+// MouseUp releases a button, after moving the pointer to at unless at is nil.
+func (c *Computer) MouseUp(ctx context.Context, at *Point, b Button) error {
+	return c.buttonEvent(ctx, "mouseup", at, b)
+}
+
+func (c *Computer) buttonEvent(ctx context.Context, verb string, at *Point, b Button) error {
+	args, err := c.moveTo(at)
+	if err != nil {
+		return err
+	}
+	n, err := buttonNumber(b)
+	if err != nil {
+		return err
+	}
+	_, err = c.xdotool(ctx, append(args, verb, n)...)
 	return err
 }
 
 // Drag presses the left button at (x1, y1), moves to (x2, y2) and releases.
 func (c *Computer) Drag(ctx context.Context, x1, y1, x2, y2 int) error {
-	if err := c.checkPoint(x1, y1); err != nil {
+	return c.DragPath(ctx, []Point{{x1, y1}, {x2, y2}}, Left)
+}
+
+// DragPath presses a button at the first point, moves through the others in order and
+// releases it at the last one. It runs as one xdotool command, so nothing else can move
+// the pointer halfway through.
+func (c *Computer) DragPath(ctx context.Context, path []Point, b Button) error {
+	if len(path) < 2 || len(path) > MaxPath {
+		return fmt.Errorf("%w: a drag needs 2 to %d points, got %d", ErrInvalid, MaxPath, len(path))
+	}
+	for _, p := range path {
+		if err := c.checkPoint(p.X, p.Y); err != nil {
+			return err
+		}
+	}
+	n, err := buttonNumber(b)
+	if err != nil {
 		return err
 	}
-	if err := c.checkPoint(x2, y2); err != nil {
+	args := []string{"mousemove", itoa(path[0].X), itoa(path[0].Y), "mousedown", n}
+	for _, p := range path[1:] {
+		args = append(args, "mousemove", itoa(p.X), itoa(p.Y))
+	}
+	_, err = c.xdotool(ctx, append(args, "mouseup", n)...)
+	return err
+}
+
+// DragTo presses a button where the pointer is, moves to (x, y) and releases it.
+func (c *Computer) DragTo(ctx context.Context, x, y int, b Button) error {
+	if err := c.checkPoint(x, y); err != nil {
 		return err
 	}
-	_, err := c.xdotool(ctx, "mousemove", itoa(x1), itoa(y1), "mousedown", "1",
-		"mousemove", itoa(x2), itoa(y2), "mouseup", "1")
+	n, err := buttonNumber(b)
+	if err != nil {
+		return err
+	}
+	_, err = c.xdotool(ctx, "mousedown", n, "mousemove", itoa(x), itoa(y), "mouseup", n)
 	return err
 }
 
 // Scroll moves the pointer and turns the wheel amount clicks in dir.
 func (c *Computer) Scroll(ctx context.Context, x, y int, dir Direction, amount int) error {
-	if err := c.checkPoint(x, y); err != nil {
+	return c.ScrollAt(ctx, &Point{x, y}, dir, amount)
+}
+
+// ScrollAt turns the wheel amount clicks in dir at at, or where the pointer already is when
+// at is nil.
+func (c *Computer) ScrollAt(ctx context.Context, at *Point, dir Direction, amount int) error {
+	args, err := c.moveTo(at)
+	if err != nil {
 		return err
 	}
 	if amount < 1 || amount > MaxScroll {
@@ -145,7 +227,7 @@ func (c *Computer) Scroll(ctx context.Context, x, y int, dir Direction, amount i
 	if !ok {
 		return fmt.Errorf("%w: unknown scroll direction %q (want up, down, left or right)", ErrInvalid, dir)
 	}
-	_, err := c.xdotool(ctx, "mousemove", itoa(x), itoa(y), "click", "--repeat", itoa(amount), b)
+	_, err = c.xdotool(ctx, append(args, "click", "--repeat", itoa(amount), b)...)
 	return err
 }
 
@@ -184,6 +266,22 @@ func (c *Computer) Key(ctx context.Context, combo string) error {
 		}
 	}
 	_, err := c.xdotool(ctx, append([]string{"key", "--"}, keys...)...)
+	return err
+}
+
+// KeyDown presses and holds a key or chord, such as "shift" or "ctrl+a", until KeyUp.
+func (c *Computer) KeyDown(ctx context.Context, key string) error {
+	return c.keyEvent(ctx, "keydown", key)
+}
+
+// KeyUp releases a key or chord pressed with KeyDown.
+func (c *Computer) KeyUp(ctx context.Context, key string) error { return c.keyEvent(ctx, "keyup", key) }
+
+func (c *Computer) keyEvent(ctx context.Context, verb, key string) error {
+	if !keyRE.MatchString(key) {
+		return fmt.Errorf("%w: key %q", ErrInvalid, key)
+	}
+	_, err := c.xdotool(ctx, verb, "--", key)
 	return err
 }
 
