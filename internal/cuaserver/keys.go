@@ -44,11 +44,16 @@ func init() {
 	for i := 1; i <= 24; i++ {
 		keyNames["f"+strconv.Itoa(i)] = "F" + strconv.Itoa(i)
 	}
+	// Models trained on xdotool send punctuation by keysym name, as in "ctrl+minus".
+	for _, x := range charNames {
+		keyNames[strings.ToLower(x)] = x
+	}
 }
 
-// keysymRE matches names that may be X keysyms not in the table, such as KP_Enter or
-// XF86AudioMute. They are passed to xdotool as given, since keysym names are case-sensitive.
-var keysymRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+// keysymRE matches the keypad and media keysym families, such as KP_Enter or XF86AudioMute,
+// which pass to xdotool as given. Other names must be in the table: xdotool silently ignores
+// a key name it does not know, so passing typos through would report success for nothing.
+var keysymRE = regexp.MustCompile(`^(KP|XF86)_?[A-Za-z0-9_]+$`)
 
 // xKey turns one key name from a Cua client into an xdotool key name.
 func xKey(name string) (string, error) {

@@ -22,7 +22,9 @@ func TestXKey(t *testing.T) {
 		// single characters
 		"a": "a", "Z": "Z", "7": "7", "/": "slash", "+": "plus", "-": "minus", " ": "space", ".": "period",
 		"\n": "Return", "é": "U00E9",
-		// other X keysyms pass through unchanged
+		// X names for punctuation, which xdotool-trained models send
+		"minus": "minus", "plus": "plus", "equal": "equal", "comma": "comma", "bracketleft": "bracketleft",
+		// keypad and media keysyms pass through unchanged
 		"KP_Enter": "KP_Enter", "XF86AudioMute": "XF86AudioMute",
 	}
 	for in, want := range cases {
@@ -31,7 +33,8 @@ func TestXKey(t *testing.T) {
 			t.Errorf("xKey(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"", "not a key", "ctrl;reboot", "--window", "\x00"} {
+	// xdotool ignores names it does not know, so these must fail here instead.
+	for _, bad := range []string{"", "not a key", "Retrun", "ctrl;reboot", "--window", "\x00", "Hyper_Typo"} {
 		if got, err := xKey(bad); err == nil || !strings.HasPrefix(err.Error(), "Unknown key: ") {
 			t.Errorf("xKey(%q) = %q, %v; want an Unknown key error", bad, got, err)
 		}
