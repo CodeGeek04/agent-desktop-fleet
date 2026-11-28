@@ -84,7 +84,9 @@ function humanSeconds(sec) {
 const sleepWord = () => (state.status && state.status.pause_unsupported ? "Stop" : "Pause");
 
 const describe = (e) => e.action.replaceAll("_", " ") + (e.detail ? " " + e.detail : "");
-const who = (e) => (e.source === "console" ? "You" : "Agent");
+// Agents reach desktops through adf mcp ("agent") or adf cua-server ("cua"); people through the console.
+const byAgent = (e) => e.source !== "console";
+const who = (e) => (e.source === "console" ? "You" : e.source === "cua" ? "Cua agent" : "Agent");
 const desktop = (name) => state.desktops.find((d) => d.name === name);
 const recent = (e, ms) => Boolean(e) && Date.now() - Date.parse(e.time) < ms;
 
@@ -98,7 +100,7 @@ function condition(d) {
   if (d.state !== "running") return { key: "stopped", lamp: "off", text: "Stopped", tally: "" };
   const e = state.lastEvent.get(d.name);
   if (e && !e.ok && recent(e, ERROR_SHOWN_MS)) return { key: "error", lamp: "error", text: "Last action failed", tally: "" };
-  if (e && e.source === "agent" && recent(e, AGENT_ACTIVE_MS)) return { key: "agent", lamp: "agent", text: "Agent acting", tally: "agent" };
+  if (e && byAgent(e) && recent(e, AGENT_ACTIVE_MS)) return { key: "agent", lamp: "agent", text: "Agent acting", tally: "agent" };
   return { key: "ready", lamp: "ready", text: "Ready", tally: "" };
 }
 
@@ -400,7 +402,7 @@ function renderFocus() {
 function renderFeed() {
   if (!state.focus) return;
   const items = state.events
-    .filter((e) => e.desktop === state.focus && (state.feedFilter === "all" || e.source === state.feedFilter))
+    .filter((e) => e.desktop === state.focus && (state.feedFilter === "all" || (state.feedFilter === "agent" ? byAgent(e) : e.source === state.feedFilter)))
     .slice(-150)
     .reverse();
   const rows = items.map((e) => {

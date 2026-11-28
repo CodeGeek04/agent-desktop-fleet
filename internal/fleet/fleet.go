@@ -416,7 +416,12 @@ func (m *Manager) Delete(ctx context.Context, name string) error {
 
 // Exec runs argv inside a desktop and returns its stdout.
 func (m *Manager) Exec(ctx context.Context, name string, argv ...string) ([]byte, error) {
-	return m.RT.Exec(ctx, DesktopPrefix+name, nil, argv...)
+	return m.ExecStdin(ctx, name, nil, argv...)
+}
+
+// ExecStdin runs argv inside a desktop with stdin as its input and returns its stdout.
+func (m *Manager) ExecStdin(ctx context.Context, name string, stdin io.Reader, argv ...string) ([]byte, error) {
+	return m.RT.Exec(ctx, DesktopPrefix+name, stdin, argv...)
 }
 
 // Computer returns the computer-use actions for a desktop. An action on a stopped desktop

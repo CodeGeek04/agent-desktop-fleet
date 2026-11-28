@@ -229,6 +229,23 @@ func TestComputerRunsInsideTheDesktop(t *testing.T) {
 	}
 }
 
+func TestExecStdinPassesInputToTheDesktop(t *testing.T) {
+	rt := fleettest.New()
+	rt.Machines["adf-a"] = &smolvm.Machine{Name: "adf-a", State: "running", Labels: map[string]string{LabelRole: RoleDesktop}}
+	var got string
+	rt.ExecFunc = func(name, stdin string, argv []string) ([]byte, error) {
+		got = name + " " + stdin
+		return []byte("ok"), nil
+	}
+	out, err := testManager(rt).ExecStdin(ctx, "a", strings.NewReader("hello"), "sh", "-c", "cat > /tmp/f")
+	if err != nil || string(out) != "ok" || got != "adf-a hello" {
+		t.Fatalf("out=%q err=%v stdin seen=%q", out, err, got)
+	}
+	if calls := rt.Calls(); calls[len(calls)-1] != "exec adf-a sh -c cat > /tmp/f" {
+		t.Fatalf("calls = %q", calls)
+	}
+}
+
 func TestConcurrentCreatesStartTemplateOnce(t *testing.T) {
 	rt := fleettest.New()
 	rt.Machines[TemplateName] = &smolvm.Machine{Name: TemplateName, State: "stopped",

@@ -109,6 +109,51 @@ Agent actions from every `adf mcp` process (for example, each Claude Code sessio
 they happen. The page is served on 127.0.0.1 only, and the link it prints carries a one-time
 token.
 
+## Coming from Cua Cloud
+
+Cua Cloud, the hosted sandboxes of [trycua/cua](https://github.com/trycua/cua), shut down on 18
+October 2026. `adf cua-server` serves the same API for adf desktops, so code written for Cua Cloud
+runs after changing environment variables:
+
+```sh
+adf cua-server      # serves http://127.0.0.1:8000 and prints a token and these variables
+```
+
+**cua-computer 0.5.19**, with `Computer(os_type="linux", provider_type="cloud", name="a")`. Create
+the desktop first (`adf create a`), then set:
+
+```sh
+export CUA_API_KEY=TOKEN
+export CUA_API_BASE=http://127.0.0.1:8000       # the /v1/vms API
+export CUA_API_BASE_URL=http://127.0.0.1:8000   # the commands
+```
+
+Set them before Python starts, because cua-computer reads `CUA_API_BASE` on import. Releases
+before 0.5.19 cannot be pointed at another server this way, so upgrade to 0.5.19.
+
+**cua-sandbox 0.8.0 or earlier**, with `Sandbox.create`, `Sandbox.ephemeral` or `Sandbox.connect`:
+
+```sh
+export CUA_API_KEY=TOKEN
+export CUA_BASE_URL=http://127.0.0.1:8000
+```
+
+`Sandbox.ephemeral(Image.linux())` creates a desktop named `cua-` and six random characters and
+deletes it at the end of the block. A `~/.cua/credentials` file takes priority over `CUA_API_KEY`.
+
+Requests name their desktop with `X-Container-Name`, which both clients send, or with a `/d/NAME/`
+base URL; with a single desktop no name is needed. Every command appears in `adf console` as a Cua
+agent action, and a paused or stopped desktop wakes on the next command. On an address other than
+127.0.0.1, set the token with `--token` or `ADF_CUA_TOKEN`: the server refuses to start without one.
+
+Supported: screenshots (PNG and JPEG), clicks, mouse button down and up, drags, scrolling,
+typing, keys and hotkeys, key down and up, `run_command` with a timeout, the file commands, and
+the `/v1/vms` calls to create, list, start, stop, suspend, restart and delete. Not supported:
+Windows and macOS sandboxes, the current Cua SDK (`cua-sandbox` 0.9.0 and later, which cannot
+reach this API), the WebSocket API (used by cua-computer before 0.4 and the TypeScript SDK),
+clipboard, window management, `launch` and `open`, terminals (PTY) and `/playwright_exec`. Sizes
+and regions in create requests are ignored: every desktop is 1280x800 with Firefox.
+
 ## Demo
 
 ```sh
@@ -173,7 +218,7 @@ Releases: push a `vX.Y.Z` tag to build archives, publish them and update `Formul
 
 ## Repository layout
 
-- `cmd/adf`, `internal/`: the `adf` CLI, MCP server and web console
+- `cmd/adf`, `internal/`: the `adf` CLI, MCP server, web console and Cua-compatible server
 - `install.sh`, `scripts/`, `Formula/`: installer, release build and Homebrew formula
 - `skills/`: the adf skill (`adf skill install` embeds it); `plugin/`, `.claude-plugin/`: the Claude Code plugin
 - `docs/superpowers/plans/`: implementation plans
