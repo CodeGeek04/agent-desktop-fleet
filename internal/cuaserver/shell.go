@@ -27,6 +27,9 @@ head -c "$no" "$o"
 head -c "$ne" "$e"
 rm -f "$o" "$e"`
 
+// maxTimeout caps run_command's timeout, so the backstop deadline below cannot overflow.
+const maxTimeout = 24 * time.Hour
+
 func shellCommands() map[string]command {
 	return map[string]command{
 		"run_command": {params: []param{req("command"), opt("timeout", nil)}, need: needAwake, run: runCommand,
@@ -50,6 +53,7 @@ func runCommand(ctx context.Context, d desk, p params) (result, error) {
 		if secs <= 0 {
 			return nil, fmt.Errorf("timeout must be more than 0 seconds, got %g", secs)
 		}
+		secs = min(secs, maxTimeout.Seconds())
 		limit = strconv.FormatFloat(secs, 'f', -1, 64)
 		// A backstop in case the desktop stops answering; the timeout inside fires first.
 		var cancel context.CancelFunc

@@ -383,6 +383,16 @@ func TestActivityRecordsCuaCommands(t *testing.T) {
 	}
 }
 
+func TestActivitySkipsNamesThatCannotBeDesktops(t *testing.T) {
+	ts, rec := newServer(t, newRuntime("a"), Options{})
+	hdr := keyed(map[string]string{"X-Container-Name": "Not A Desktop"})
+	mustSucceed(t, send(t, ts, "/cmd", hdr, "version", nil))
+	mustFail(t, send(t, ts, "/cmd", hdr, "launch", nil), "not supported")
+	if ev := rec.all(); len(ev) != 0 {
+		t.Fatalf("recorded %+v", ev)
+	}
+}
+
 func TestCommandsListing(t *testing.T) {
 	ts, _ := newServer(t, newRuntime("a"), Options{})
 	_, body := request(t, ts, "GET", "/commands", keyed(nil), "")

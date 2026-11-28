@@ -35,15 +35,28 @@ type Server struct {
 	opts     Options
 	commands map[string]command
 
-	mu      sync.Mutex
-	ensured bool                   // template provisioned during this process's lifetime
-	waking  map[string]*sync.Mutex // one lock per desktop, so concurrent commands start it once
+	mu     sync.Mutex             // guards waking
+	waking map[string]*sync.Mutex // one lock per desktop, so concurrent commands start it once
+
+	ensureMu sync.Mutex // held while the template is checked, which can take minutes the first time
+	ensured  bool       // template provisioned during this process's lifetime
 
 	wsNoted atomic.Bool // the WebSocket note was already logged
 }
 
 // maxBody caps a request body. write_bytes sends up to 5 MB of file data as base64 in one call.
 const maxBody = 64 << 20
+
+// lifecycleTimeout bounds creating, starting and stopping a desktop, which run detached from
+// the request (see detached).
+const lifecycleTimeout = 10 * time.Minute
+
+// detached returns a context for lifecycle work that must finish even when the client stops
+// waiting: cua-sandbox gives up after 30 seconds, and a cancelled template build or a desktop
+// started without its screen session would be worse than a late answer.
+func detached(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), lifecycleTimeout)
+}
 
 // New returns a server for f.
 func New(f *fleet.Manager, opts Options) *Server {
@@ -202,13 +215,15 @@ func (s *Server) wake(ctx context.Context, name string) error {
 		return err
 	}
 	s.logf("desktop %q is %s; starting it", name, d.State)
+	ctx, cancel := detached(ctx)
+	defer cancel()
 	return s.fleet.Start(ctx, name)
 }
 
 // ensureTemplate provisions the template once per process; later calls are free.
 func (s *Server) ensureTemplate(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.ensureMu.Lock()
+	defer s.ensureMu.Unlock()
 	if s.ensured {
 		return nil
 	}
@@ -219,8 +234,10 @@ func (s *Server) ensureTemplate(ctx context.Context) error {
 	return nil
 }
 
+// record logs one event. Names that cannot be desktops, which arrive unchecked in headers
+// for commands that need no desktop, are not logged.
 func (s *Server) record(desktop, action, detail string, start time.Time, ok bool, errMsg string) {
-	if s.opts.Activity == nil || desktop == "" {
+	if s.opts.Activity == nil || fleet.ValidateName(desktop) != nil {
 		return
 	}
 	s.opts.Activity.Record(activity.Event{Time: start, Desktop: desktop, Source: activity.SourceCua, Action: action,

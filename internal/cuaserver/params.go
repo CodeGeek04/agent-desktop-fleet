@@ -27,28 +27,35 @@ func (p params) number(key string) (float64, bool, error) {
 	case nil:
 		return 0, false, nil
 	case json.Number:
-		f, err := n.Float64()
-		if err != nil {
-			return 0, false, badParam(key, "a number", v)
+		if f, err := n.Float64(); err == nil {
+			return finite(key, f, v)
 		}
-		return f, true, nil
 	case float64:
-		return n, true, nil
+		return finite(key, n, v)
 	case string:
 		if f, err := strconv.ParseFloat(n, 64); err == nil {
-			return f, true, nil
+			return finite(key, f, v)
 		}
 	}
 	return 0, false, badParam(key, "a number", v)
 }
 
+// finite rejects NaN and infinities, which ParseFloat accepts from strings such as "NaN".
+func finite(key string, f float64, v any) (float64, bool, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, false, badParam(key, "a finite number", v)
+	}
+	return f, true, nil
+}
+
 // int reads a whole number, rounding fractions: models often send coordinates like 640.0.
+// The limit leaves room for byte offsets in very large files.
 func (p params) int(key string) (int, bool, error) {
 	f, ok, err := p.number(key)
 	if !ok || err != nil {
 		return 0, ok, err
 	}
-	if math.IsNaN(f) || math.Abs(f) > 1e9 {
+	if math.Abs(f) > 1e15 {
 		return 0, false, badParam(key, "a reasonable number", p[key])
 	}
 	return int(math.Round(f)), true, nil

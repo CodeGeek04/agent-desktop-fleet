@@ -137,16 +137,18 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createDesktop(r *http.Request, name string) (string, error) {
-	if err := s.ensureTemplate(r.Context()); err != nil {
+	ctx, cancel := detached(r.Context())
+	defer cancel()
+	if err := s.ensureTemplate(ctx); err != nil {
 		return name, err
 	}
 	if name != "" {
-		_, err := s.fleet.CreateDesktop(r.Context(), name)
+		_, err := s.fleet.CreateDesktop(ctx, name)
 		return name, err
 	}
 	for range 3 { // a fresh random name is very unlikely to be taken, but retry if it is
 		name = s.opts.NamePrefix + randomSuffix()
-		_, err := s.fleet.CreateDesktop(r.Context(), name)
+		_, err := s.fleet.CreateDesktop(ctx, name)
 		if !errors.Is(err, fleet.ErrExists) {
 			return name, err
 		}
@@ -190,6 +192,8 @@ func (s *Server) handleVMAction(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 	d, err := s.target(ctx, name)
+	ctx, cancel := detached(ctx)
+	defer cancel()
 	if err == nil {
 		running := d.State == "running"
 		switch action {

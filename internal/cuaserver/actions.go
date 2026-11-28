@@ -282,12 +282,21 @@ func drag(ctx context.Context, d desk, p params) (result, error) {
 	return nil, d.c.DragPath(ctx, path, b)
 }
 
-// hotkeyKeys reads hotkey's keys: a list, or one string such as "ctrl+c".
+// hotkeyKeys reads hotkey's keys: a list, or one string such as "ctrl+c". Items of the list
+// may be chords too: cua-sandbox's keypress("ctrl+c") sends ["ctrl+c"].
 func hotkeyKeys(p params) ([]string, error) {
 	if s, ok := p["keys"].(string); ok {
 		return splitCombo(s), nil
 	}
-	return p.strings("keys")
+	list, err := p.strings("keys")
+	if err != nil {
+		return nil, err
+	}
+	var keys []string
+	for _, k := range list {
+		keys = append(keys, splitCombo(k)...)
+	}
+	return keys, nil
 }
 
 // hotkey presses keys together. xdotool presses them in order and releases them in reverse,

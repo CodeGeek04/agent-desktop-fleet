@@ -48,6 +48,8 @@ func TestInputCommandArgv(t *testing.T) {
 		{"hotkey", "hotkey", map[string]any{"keys": []string{"ctrl", "shift", "t"}}, []string{xdo("key -- ctrl+shift+t")}},
 		{"hotkey cmd", "hotkey", map[string]any{"keys": []string{"command", "c"}}, []string{xdo("key -- super+c")}},
 		{"hotkey string", "hotkey", map[string]any{"keys": "alt+F4"}, []string{xdo("key -- alt+F4")}},
+		{"sandbox keypress chord", "hotkey", map[string]any{"keys": []string{"ctrl+c"}}, []string{xdo("key -- ctrl+c")}},
+		{"sandbox keypress key", "hotkey", map[string]any{"keys": []string{"enter"}}, []string{xdo("key -- Return")}},
 		{"key down", "key_down", map[string]any{"key": "shift"}, []string{xdo("keydown -- shift")}},
 		{"key up", "key_up", map[string]any{"key": "cmd"}, []string{xdo("keyup -- super")}},
 		// cua-computer: x and y are wheel amounts at the pointer; positive y is up.
@@ -96,6 +98,8 @@ func TestInvalidInputFails(t *testing.T) {
 		{"scroll_direction", map[string]any{"direction": "sideways"}, "Invalid direction: sideways"},
 		{"screenshot", map[string]any{"format": "gif"}, "unsupported screenshot format"},
 		{"run_command", map[string]any{"command": "true", "timeout": -1}, "timeout must be more than 0"},
+		{"run_command", map[string]any{"command": "true", "timeout": "NaN"}, "timeout must be a finite number"},
+		{"left_click", map[string]any{"x": "Inf", "y": 1}, "x must be a finite number"},
 		{"write_bytes", map[string]any{"path": "/x", "content_b64": "%%%"}, "not valid base64"},
 		{"read_bytes", map[string]any{"path": "/x", "offset": -1}, "must not be negative"},
 		{"read_text", map[string]any{"path": ""}, "path is required"},

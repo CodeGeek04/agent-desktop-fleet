@@ -16,9 +16,10 @@ import (
 const (
 	fileExistsScript = `if [ -f "$1" ]; then echo yes; else echo no; fi`
 	dirExistsScript  = `if [ -d "$1" ]; then echo yes; else echo no; fi`
-	// Cua listed entries that are files or directories, following symlinks.
+	// Cua listed entries that are files or directories, following symlinks. -H follows "$1"
+	// itself when it is a symlink, as /bin is on Debian.
 	listDirScript = `[ -d "$1" ] || { echo "not a directory: $1" >&2; exit 1; }
-find "$1" -mindepth 1 -maxdepth 1 \( -xtype f -o -xtype d \) -printf '%f\0'`
+find -H "$1" -mindepth 1 -maxdepth 1 \( -xtype f -o -xtype d \) -printf '%f\0'`
 	readScript = `exec cat -- "$1"`
 	// "$2" is the byte offset and "$3", when set, the number of bytes.
 	readRangeScript = `exec dd if="$1" bs=65536 iflag=skip_bytes,count_bytes skip="$2" ${3:+count="$3"} status=none`

@@ -3,6 +3,7 @@ package cuaserver
 import (
 	"context"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -104,6 +105,14 @@ func TestFileScriptsRunForReal(t *testing.T) {
 	}
 	if res := runLocal(t, "list_dir", params{"path": dir}); !reflect.DeepEqual(res["files"], []string{"a.txt", "sub"}) {
 		t.Fatalf("list_dir = %v", res)
+	}
+	// A symlinked directory is listed through the link, as /bin is on Debian.
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	if res := runLocal(t, "list_dir", params{"path": link}); !reflect.DeepEqual(res["files"], []string{"a.txt", "sub"}) {
+		t.Fatalf("list_dir through a symlink = %v", res)
 	}
 	runLocal(t, "delete_file", params{"path": f})
 	runLocal(t, "delete_dir", params{"path": sub})
